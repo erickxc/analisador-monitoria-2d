@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build (PyInstaller)
+build/
+dist/
+
+# Dados locais e logs — gerados em tempo de execução, específicos de cada
+# instalação/usuário (cada pessoa que roda o .exe tem o seu próprio perfil).
+dados_locais/
+logs/
+
+# Configuração local de editor/ferramentas
+.claude/
+.vscode/
+
+# Dados de vendas/clientes — nunca versionar dados reais ou de teste
+*.csv
+*.xlsx
+*.xls
+
+# OS
+Thumbs.db
+.DS_Store

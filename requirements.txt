@@ -1,0 +1,8 @@
+pandas
+openpyxl
+matplotlib
+tkinterdnd2
+Pillow
+sv-ttk
+reportlab
+python-docx

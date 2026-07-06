@@ -13,6 +13,7 @@ import json
 import queue
 import logging
 import threading
+import traceback
 from datetime import datetime
 
 import tkinter as tk
@@ -212,6 +213,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._aplicar_zoom(None)
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar_janela)
+
+    def report_callback_exception(self, exc, val, tb):
+        # O .exe roda sem console (modo janela) — sem isso, qualquer exceção
+        # dentro de um comando de botão, trace de variável ou bind seria
+        # descartada silenciosamente (o comportamento padrão do Tkinter é
+        # imprimir em stderr, que não existe nesse modo). Aqui ela vira log
+        # visível tanto no arquivo de log quanto no painel de Execução.
+        mensagem = "".join(traceback.format_exception(exc, val, tb))
+        try:
+            self.logger.error(f"Exceção não tratada em callback da interface:\n{mensagem}")
+        except Exception:
+            pass
+        try:
+            self._registrar_log("Erro interno ao processar a última ação — veja o log para detalhes.", nivel="error")
+        except Exception:
+            pass
 
     def _ao_fechar_janela(self):
         try:
@@ -1083,11 +1100,19 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             grupo.grid(row=i // 2, column=i % 2, sticky="nsew", padx=6, pady=6)
             for j, (chave, titulo) in enumerate(itens):
                 var = tk.BooleanVar(value=True)
-                var.trace_add("write", lambda *_: self._atualizar_contagem_catalogo())
                 self.vars_catalogo[chave] = var
                 caixa = ttk.Checkbutton(grupo, text=titulo, variable=var, onvalue=True, offvalue=False)
-                caixa.configure(command=lambda c=caixa: c.state(["!alternate"]))
                 caixa.grid(row=j, column=0, sticky="w", padx=10, pady=4)
+
+                def _ao_mudar_selecao(*_args, caixa=caixa, var=var):
+                    # Define o estado visual do checkbox diretamente a partir do valor
+                    # atual da variável — não depende do redesenho automático do ttk,
+                    # que não é confiável quando a variável é alterada fora de um
+                    # clique real (ex.: pelos botões "Selecionar todos"/"Limpar seleção").
+                    caixa.state(["selected" if var.get() else "!selected", "!alternate"])
+                    self._atualizar_contagem_catalogo()
+
+                var.trace_add("write", _ao_mudar_selecao)
         self._atualizar_contagem_catalogo()
 
         area_exportacao = ttk.LabelFrame(master, text="Exportação")

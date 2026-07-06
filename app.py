@@ -1094,25 +1094,19 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         lista_frame.columnconfigure(0, weight=1, uniform="categoria")
         lista_frame.columnconfigure(1, weight=1, uniform="categoria")
 
-        self.vars_catalogo = {}
+        # O estado de cada relatório é o próprio estado ttk do Checkbutton
+        # ("selected"/"!selected"), sem tk.BooleanVar/trace — usar variável
+        # ligada se mostrou pouco confiável (o clique às vezes não disparava
+        # a escrita na variável). command= nunca falhou nos testes.
+        self.checkboxes_catalogo = {}
         for i, (categoria, itens) in enumerate(CATALOGO_RELATORIOS):
             grupo = ttk.LabelFrame(lista_frame, text=categoria)
             grupo.grid(row=i // 2, column=i % 2, sticky="nsew", padx=6, pady=6)
             for j, (chave, titulo) in enumerate(itens):
-                var = tk.BooleanVar(value=True)
-                self.vars_catalogo[chave] = var
-                caixa = ttk.Checkbutton(grupo, text=titulo, variable=var, onvalue=True, offvalue=False)
+                caixa = ttk.Checkbutton(grupo, text=titulo, command=self._atualizar_contagem_catalogo)
+                caixa.state(["selected", "!alternate"])
                 caixa.grid(row=j, column=0, sticky="w", padx=10, pady=4)
-
-                def _ao_mudar_selecao(*_args, caixa=caixa, var=var):
-                    # Define o estado visual do checkbox diretamente a partir do valor
-                    # atual da variável — não depende do redesenho automático do ttk,
-                    # que não é confiável quando a variável é alterada fora de um
-                    # clique real (ex.: pelos botões "Selecionar todos"/"Limpar seleção").
-                    caixa.state(["selected" if var.get() else "!selected", "!alternate"])
-                    self._atualizar_contagem_catalogo()
-
-                var.trace_add("write", _ao_mudar_selecao)
+                self.checkboxes_catalogo[chave] = caixa
         self._atualizar_contagem_catalogo()
 
         area_exportacao = ttk.LabelFrame(master, text="Exportação")
@@ -1134,21 +1128,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.botao_gerar.pack(pady=14)
 
     def _marcar_catalogo(self, valor):
-        for var in self.vars_catalogo.values():
-            var.set(valor)
+        for caixa in self.checkboxes_catalogo.values():
+            caixa.state(["selected", "!alternate"] if valor else ["!selected", "!alternate"])
+        self._atualizar_contagem_catalogo()
 
     def _chaves_catalogo_selecionadas(self):
-        selecionadas = []
-        for chave, var in self.vars_catalogo.items():
-            try:
-                if var.get():
-                    selecionadas.append(chave)
-            except tk.TclError:
-                continue
-        return selecionadas
+        return [chave for chave, caixa in self.checkboxes_catalogo.items() if caixa.instate(["selected"])]
 
     def _atualizar_contagem_catalogo(self):
-        total = len(self.vars_catalogo)
+        total = len(self.checkboxes_catalogo)
         selecionados = len(self._chaves_catalogo_selecionadas())
         self.label_contagem_catalogo.config(text=f"{selecionados} de {total} relatórios selecionados")
 

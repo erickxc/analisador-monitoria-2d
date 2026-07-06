@@ -601,9 +601,10 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         linha += 1
         self.var_granularidade = tk.StringVar(value="Mensal")
         for granularidade in af.GRANULARIDADES:
-            ttk.Radiobutton(linha_granularidade, text=granularidade, value=granularidade, variable=self.var_granularidade).pack(
-                side="left", padx=(0, 10)
-            )
+            ttk.Radiobutton(
+                linha_granularidade, text=granularidade, value=granularidade, variable=self.var_granularidade,
+                command=lambda g=granularidade: self.var_granularidade.set(g),
+            ).pack(side="left", padx=(0, 10))
 
         return frame
 
@@ -1117,7 +1118,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         ttk.Label(barra_formato, text="Formato de exportação:").pack(side="left", padx=(0, 8))
         self.var_formato_exportacao = tk.StringVar(value="Excel")
         for formato in ("Excel", "PDF", "Word"):
-            ttk.Radiobutton(barra_formato, text=formato, value=formato, variable=self.var_formato_exportacao).pack(side="left", padx=4)
+            ttk.Radiobutton(
+                barra_formato, text=formato, value=formato, variable=self.var_formato_exportacao,
+                # command explícito além da variável ligada — o clique no radio nem sempre
+                # escreve na variável de forma confiável (mesmo problema visto nas checkboxes
+                # do catálogo), então forçamos aqui como garantia.
+                command=lambda f=formato: self.var_formato_exportacao.set(f),
+            ).pack(side="left", padx=4)
         ttk.Label(
             area_exportacao, text="PDF/Word mostram no máximo 50 linhas por tabela (formato de leitura, não de dados).\n"
                                   "Para a base completa (ex.: todos os clientes da segmentação ABC), use Excel.",

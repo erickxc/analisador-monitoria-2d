@@ -37,5 +37,11 @@ NOME_SISTEMA = "Analisador Inteligente"
 NOME_EMPRESA = "2D Consultores | Monitores"
 TITULO_JANELA = f"{NOME_SISTEMA} - {NOME_EMPRESA}"
 
+# Versão embutida no executável — atualizada manualmente a cada release
+# publicada no GitHub. Usada por atualizacoes.py para avisar o usuário
+# quando existe uma versão mais nova disponível.
+VERSAO_ATUAL = "1.0.0"
+REPOSITORIO_GITHUB = "erickxc/analisador-monitoria-2d"
+
 CAMINHO_LOGO = caminho_recurso("assets", "logo_2d.png")
 CAMINHO_LOGO_ICO = caminho_recurso("assets", "logo_2d.ico")

@@ -14,14 +14,19 @@ import queue
 import logging
 import threading
 import traceback
+import webbrowser
 from datetime import datetime
 
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
 
-from recursos import CAMINHO_LOGO, CAMINHO_LOGO_ICO, NOME_SISTEMA, NOME_EMPRESA, TITULO_JANELA, pasta_base_execucao
+from recursos import (
+    CAMINHO_LOGO, CAMINHO_LOGO_ICO, NOME_SISTEMA, NOME_EMPRESA, TITULO_JANELA,
+    VERSAO_ATUAL, pasta_base_execucao,
+)
 import perfil
+import atualizacoes
 
 try:
     from tkinterdnd2 import TkinterDnD
@@ -213,6 +218,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._aplicar_zoom(None)
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar_janela)
+
+        threading.Thread(target=self._verificar_atualizacoes_em_segundo_plano, daemon=True).start()
 
     def report_callback_exception(self, exc, val, tb):
         # O .exe roda sem console (modo janela) — sem isso, qualquer exceção
@@ -1058,9 +1065,33 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     self._ao_concluir_geracao(dados)
                 elif tipo == "erro":
                     self._ao_falhar_geracao(dados)
+                elif tipo == "atualizacao_disponivel":
+                    self._avisar_nova_versao(dados)
         except queue.Empty:
             pass
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
+
+    def _verificar_atualizacoes_em_segundo_plano(self):
+        # Roda em thread separada (chamada de rede) — nunca deve travar a
+        # abertura do sistema nem gerar popup se falhar (sem internet, etc).
+        try:
+            resultado = atualizacoes.verificar_nova_versao()
+        except Exception:
+            resultado = None
+        if resultado:
+            self.fila_eventos.put(("atualizacao_disponivel", resultado))
+
+    def _avisar_nova_versao(self, dados):
+        tag, url_release = dados
+        self._registrar_log(f"Nova versão disponível no GitHub: {tag} (versão atual: {VERSAO_ATUAL}).")
+        abrir = messagebox.askyesno(
+            "Nova versão disponível",
+            f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
+            f"Versão instalada: {VERSAO_ATUAL}.\n\n"
+            "Deseja abrir a página de download agora?",
+        )
+        if abrir:
+            webbrowser.open(url_release)
 
     def _anexar_log_ui(self, mensagem):
         marca_horario = datetime.now().strftime("%H:%M:%S")
@@ -1269,11 +1300,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_pdf(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
+                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
+                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE,
                 )
         except Exception as exc:
             self.logger.exception(f"Falha ao exportar {formato}")

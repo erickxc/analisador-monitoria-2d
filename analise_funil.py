@@ -56,6 +56,10 @@ def carregar_csv(caminho_arquivo):
             + ", ".join(colunas_faltando)
         )
 
+    # Descarta linhas completamente vazias (comuns em CSVs exportados com uma
+    # linha em branco no final, ex: ";;;;;;;;;"), que virariam "Mês" == NaN.
+    df = df.dropna(how="all")
+
     df = df.copy()
 
     # Tratamento de nulos em texto. Produtos sem descrição ficam agrupados sob

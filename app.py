@@ -9,6 +9,7 @@ em uma única janela Tkinter com abas:
 """
 
 import os
+import re
 import json
 import queue
 import logging
@@ -282,7 +283,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         bloco_titulo = ttk.Frame(cabecalho)
         bloco_titulo.pack(side="left", pady=8)
         ttk.Label(bloco_titulo, text=NOME_SISTEMA, font=("Segoe UI", 13, "bold")).pack(anchor="w")
-        ttk.Label(bloco_titulo, text=NOME_EMPRESA, font=("Segoe UI", 9), foreground="gray").pack(anchor="w")
+        ttk.Label(bloco_titulo, text=f"{NOME_EMPRESA} · v{VERSAO_ATUAL}", font=("Segoe UI", 9), foreground="gray").pack(anchor="w")
 
         self.label_boas_vindas = ttk.Label(cabecalho, text="", font=("Segoe UI", 10), foreground="#1565c0")
         self.label_boas_vindas.pack(side="right", padx=12)
@@ -355,7 +356,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _mostrar_sobre(self):
         messagebox.showinfo(
             "Sobre",
-            f"{NOME_SISTEMA}\n{NOME_EMPRESA}\n\n"
+            f"{NOME_SISTEMA} — versão {VERSAO_ATUAL}\n{NOME_EMPRESA}\n\n"
             "Análise de funil de vendas B2B: tendências de produtos, erosão de\n"
             "clientes, segmentação por faturamento e relatórios personalizados.",
         )
@@ -527,6 +528,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.label_zoom.pack(side="left", padx=2)
         ttk.Button(frame_zoom, text="+", width=3, command=lambda: self._aplicar_zoom(1.1)).pack(side="left")
         ttk.Button(frame_zoom, text="Reset", command=lambda: self._aplicar_zoom(None)).pack(side="left", padx=(4, 0))
+
+        linha_empresa = ttk.Frame(master)
+        linha_empresa.pack(fill="x", padx=10, pady=(0, 8))
+        ttk.Label(linha_empresa, text="Empresa analisada:").pack(side="left")
+        self.entrada_nome_empresa = ttk.Entry(linha_empresa, width=40)
+        self.entrada_nome_empresa.pack(side="left", padx=(6, 0))
+        ttk.Label(
+            linha_empresa, text="(aparece na capa e no nome do arquivo dos relatórios)", foreground="gray"
+        ).pack(side="left", padx=8)
 
         corpo = ttk.Frame(master)
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -1237,6 +1247,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.granularidade_referencia = granularidades[0]
         self._chaves_selecionadas_geracao = chaves_selecionadas
         self._formato_geracao = self.var_formato_exportacao.get()
+        self._nome_empresa_geracao = self.entrada_nome_empresa.get().strip()
 
         self.thread_em_execucao = True
         self.botao_gerar.config(state="disabled")
@@ -1289,9 +1300,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         }
         extensao, tipos_arquivo = opcoes_formato[formato]
 
+        nome_empresa = self._nome_empresa_geracao
+        nome_empresa_arquivo = re.sub(r'[\\/*?:"<>|]', "", nome_empresa).strip()
+        prefixo = f"Relatorio_{nome_empresa_arquivo}" if nome_empresa_arquivo else "Relatorio"
+        nome_sugerido = f"{prefixo}_{datetime.now().strftime('%Y-%m')}"
+
         self._definir_status(f"Análises concluídas. Escolha onde salvar o {formato}.")
         caminho_saida = filedialog.asksaveasfilename(
-            parent=self, defaultextension=extensao, filetypes=tipos_arquivo
+            parent=self, defaultextension=extensao, filetypes=tipos_arquivo, initialfile=nome_sugerido
         )
         if not caminho_saida:
             self._registrar_log("Exportação cancelada pelo usuário.")
@@ -1309,19 +1325,19 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             if formato == "Excel":
                 exportar_relatorio_excel(
                     caminho_saida, resultados_filtrados, self.relatorios_personalizados,
-                    nome_usuario=self.perfil.get("nome", ""),
+                    nome_usuario=self.perfil.get("nome", ""), nome_empresa=nome_empresa,
                 )
             elif formato == "PDF":
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_pdf(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
-                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE,
+                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
-                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE,
+                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
                 )
         except Exception as exc:
             self.logger.exception(f"Falha ao exportar {formato}")
@@ -1453,7 +1469,7 @@ def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
     return planilha
 
 
-def _criar_capa(workbook, resultados_analise, nome_usuario=""):
+def _criar_capa(workbook, resultados_analise, nome_usuario="", nome_empresa=""):
     """Primeira aba do relatório: logo, identidade da empresa e sumário do que foi gerado."""
     capa = workbook.create_sheet("Capa", 0)
     capa.sheet_view.showGridLines = False
@@ -1476,6 +1492,10 @@ def _criar_capa(workbook, resultados_analise, nome_usuario=""):
     capa["B11"].font = Font(size=12, color="666666")
 
     linha_info = 13
+    if nome_empresa:
+        capa[f"B{linha_info}"] = f"Empresa analisada: {nome_empresa}"
+        capa[f"B{linha_info}"].font = Font(size=13, bold=True, color=COR_CABECALHO)
+        linha_info += 1
     if nome_usuario:
         capa[f"B{linha_info}"] = f"Gerado por: {nome_usuario}"
         capa[f"B{linha_info}"].font = Font(size=10, italic=True, color="666666")
@@ -1529,7 +1549,7 @@ COLUNAS_MOEDA_POR_ANALISE = {
 }
 
 
-def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_personalizados=None, nome_usuario=""):
+def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_personalizados=None, nome_usuario="", nome_empresa=""):
     """
     Gera o arquivo .xlsx com uma aba por (análise x granularidade), formatado
     com cabeçalhos destacados, moeda BRL, largura de coluna automática e a
@@ -1537,7 +1557,7 @@ def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_perso
     """
     workbook = Workbook()
     workbook.remove(workbook.active)  # remove a aba padrão vazia
-    _criar_capa(workbook, resultados_analise, nome_usuario)
+    _criar_capa(workbook, resultados_analise, nome_usuario, nome_empresa)
 
     for granularidade, analises in resultados_analise.items():
         for chave_analise, df_analise in analises.items():

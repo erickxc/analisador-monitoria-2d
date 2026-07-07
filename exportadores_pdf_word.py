@@ -45,7 +45,7 @@ def _formatar_numero_br(valor):
     return texto
 
 
-def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None):
+def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa=""):
     import pandas as pd
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import cm
@@ -102,6 +102,10 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
         "SubtituloCapa", parent=estilos["Normal"], fontName="Helvetica",
         fontSize=12, textColor=cor_texto_secundario, alignment=TA_CENTER,
     )
+    estilo_empresa_capa = ParagraphStyle(
+        "EmpresaCapa", parent=estilos["Normal"], fontName="Helvetica-Bold",
+        fontSize=14, textColor=cor_marca, alignment=TA_CENTER, spaceBefore=10,
+    )
     estilo_meta_capa = ParagraphStyle(
         "MetaCapa", parent=estilos["Normal"], fontName="Helvetica",
         fontSize=9.5, textColor=cor_texto_secundario, alignment=TA_CENTER, spaceBefore=3,
@@ -136,6 +140,8 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
         elementos.append(Spacer(1, 18))
     elementos.append(Paragraph(NOME_SISTEMA, estilo_titulo_capa))
     elementos.append(Paragraph("Relatório Padrão", estilo_subtitulo_capa))
+    if nome_empresa:
+        elementos.append(Paragraph(nome_empresa, estilo_empresa_capa))
     elementos.append(Spacer(1, 12))
     elementos.append(HRFlowable(width=5 * cm, thickness=1.4, color=cor_marca, hAlign="CENTER"))
     elementos.append(Spacer(1, 16))
@@ -228,7 +234,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     doc.build(elementos, onFirstPage=lambda c, d: None, onLaterPages=_cabecalho_rodape)
 
 
-def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None):
+def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa=""):
     import docx
     from docx.shared import Cm, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -253,6 +259,13 @@ def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, no
     subtitulo = documento.add_paragraph("Relatório Padrão")
     subtitulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
     subtitulo.runs[0].font.color.rgb = cor_texto_secundario
+
+    if nome_empresa:
+        p_empresa = documento.add_paragraph(nome_empresa)
+        p_empresa.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_empresa.runs[0].font.color.rgb = cor_marca
+        p_empresa.runs[0].font.bold = True
+        p_empresa.runs[0].font.size = Pt(14)
 
     if nome_usuario:
         p = documento.add_paragraph(f"Gerado por {nome_usuario}")

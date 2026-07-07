@@ -10,6 +10,7 @@ em uma única janela Tkinter com abas:
 
 import os
 import re
+import sys
 import json
 import queue
 import logging
@@ -1074,6 +1075,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     self._ao_falhar_geracao(dados)
                 elif tipo == "atualizacao_checada":
                     self._ao_checar_atualizacao(dados)
+                elif tipo == "atualizacao_progresso":
+                    self._definir_status(f"Baixando atualização... {dados}%")
+                elif tipo == "atualizacao_instalacao_erro":
+                    self._ao_falhar_instalacao_atualizacao(dados)
+                elif tipo == "atualizacao_instalacao_ok":
+                    self._ao_concluir_instalacao_atualizacao()
         except queue.Empty:
             pass
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
@@ -1101,16 +1108,28 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _ao_checar_atualizacao(self, dados):
         status, info, manual = dados
         if status == "disponivel":
-            tag, url_release = info
+            tag, url_pagina, url_download_exe = info
             self._registrar_log(f"Nova versão disponível no GitHub: {tag} (versão atual: {VERSAO_ATUAL}).")
-            abrir = messagebox.askyesno(
-                "Nova versão disponível",
-                f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
-                f"Versão instalada: {VERSAO_ATUAL}.\n\n"
-                "Deseja abrir a página de download agora?",
-            )
-            if abrir:
-                webbrowser.open(url_release)
+
+            if getattr(sys, "frozen", False) and url_download_exe:
+                instalar = messagebox.askyesno(
+                    "Nova versão disponível",
+                    f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
+                    f"Versão instalada: {VERSAO_ATUAL}.\n\n"
+                    "Deseja baixar e instalar agora? O programa vai fechar e abrir a versão "
+                    "nova automaticamente.",
+                )
+                if instalar:
+                    self._baixar_e_instalar_atualizacao(url_download_exe)
+            else:
+                abrir = messagebox.askyesno(
+                    "Nova versão disponível",
+                    f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
+                    f"Versão instalada: {VERSAO_ATUAL}.\n\n"
+                    "Deseja abrir a página de download agora?",
+                )
+                if abrir:
+                    webbrowser.open(url_pagina)
         elif status == "atualizado":
             self._registrar_log(f"Checagem de atualização: versão {VERSAO_ATUAL} já é a mais recente.")
             if manual:
@@ -1124,6 +1143,37 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     "Verifique a conexão com a internet (ou se há proxy/firewall bloqueando "
                     "acesso a api.github.com) e tente novamente.",
                 )
+
+    def _baixar_e_instalar_atualizacao(self, url_download_exe):
+        self._registrar_log("Baixando atualização...")
+        self._definir_status("Baixando atualização... 0%")
+        threading.Thread(target=self._baixar_e_instalar_thread, args=(url_download_exe,), daemon=True).start()
+
+    def _baixar_e_instalar_thread(self, url_download_exe):
+        try:
+            caminho_novo_exe = atualizacoes.baixar_atualizacao(
+                url_download_exe,
+                callback_progresso=lambda pct: self.fila_eventos.put(("atualizacao_progresso", pct)),
+            )
+            atualizacoes.aplicar_atualizacao_e_reiniciar(caminho_novo_exe)
+        except Exception as exc:
+            self.fila_eventos.put(("atualizacao_instalacao_erro", str(exc)))
+            return
+        self.fila_eventos.put(("atualizacao_instalacao_ok", None))
+
+    def _ao_falhar_instalacao_atualizacao(self, erro):
+        self._registrar_log(f"Falha ao instalar atualização automaticamente: {erro}", nivel="error")
+        self._definir_status("Falha ao instalar atualização.")
+        messagebox.showerror(
+            "Atualização",
+            f"Não foi possível instalar a atualização automaticamente:\n{erro}\n\n"
+            "Baixe manualmente pela página de releases no GitHub.",
+        )
+
+    def _ao_concluir_instalacao_atualizacao(self):
+        self._registrar_log("Atualização baixada. Reiniciando o programa...")
+        self._definir_status("Reiniciando com a nova versão...")
+        self._ao_fechar_janela()
 
     def _anexar_log_ui(self, mensagem):
         marca_horario = datetime.now().strftime("%H:%M:%S")

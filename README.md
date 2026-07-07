@@ -1,6 +1,6 @@
 # Analisador Inteligente — 2D Consultores | Monitores
 
-Sistema desktop para análise de vendas B2B a partir de um CSV, com geração de relatórios em Excel (com a logo da empresa), construtor de tabelas dinâmicas (arrastar-e-soltar) e gráficos de dispersão.
+Sistema desktop para análise de vendas a partir de um CSV, com geração de relatórios em Excel (com a logo da empresa), construtor de tabelas dinâmicas (arrastar-e-soltar) e gráficos de dispersão.
 
 ## Estrutura
 

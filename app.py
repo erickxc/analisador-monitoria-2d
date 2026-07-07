@@ -1066,6 +1066,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         try:
             while True:
+                # Um handler (ex.: fim de instalação de atualização) pode
+                # fechar a janela no meio da leitura da fila — sem essa
+                # checagem, o próximo item ainda seria processado contra
+                # widgets já destruídos (TclError).
+                if not self.winfo_exists():
+                    return
                 tipo, dados = self.fila_eventos.get_nowait()
                 if tipo == "log":
                     self._anexar_log_ui(dados)
@@ -1173,7 +1179,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _ao_concluir_instalacao_atualizacao(self):
         self._registrar_log("Atualização baixada. Reiniciando o programa...")
         self._definir_status("Reiniciando com a nova versão...")
-        self._ao_fechar_janela()
+        # Fecha em um ciclo separado do loop de eventos, não aqui direto:
+        # destruir a janela no meio da leitura da fila (_bombear_fila_eventos)
+        # faz o próximo item pendente (esse log, por exemplo) ser processado
+        # contra widgets já destruídos.
+        self.after(10, self._ao_fechar_janela)
 
     def _anexar_log_ui(self, mensagem):
         marca_horario = datetime.now().strftime("%H:%M:%S")

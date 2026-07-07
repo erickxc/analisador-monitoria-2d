@@ -15,7 +15,7 @@ import numpy as np
 import re
 
 REGEX_BALCAO = re.compile(
-    r"(?i)(cliente sem cadastro|cliente final|venda externa|consumidor.*|.*balc[aã]o.*)"
+    r"(?i)(?:cliente sem cadastro|cliente final|venda externa|consumidor.*|.*balc[aã]o.*)"
 )
 
 MESES_PT = {
@@ -62,12 +62,11 @@ def carregar_csv(caminho_arquivo):
             + ", ".join(colunas_faltando)
         )
 
-    # Descarta linhas completamente vazias (comuns em CSVs exportados com uma
-    # linha em branco no final, ex: ";;;;;;;;;"), que virariam "Mês" == NaN.
-    df = df.dropna(how="all")
-
     df = df.copy()
 
+    # Descarta linhas com Ano ou Mês vazio (comuns em CSVs exportados com uma
+    # linha em branco no final, ex: ";;;;;;;;;") — contadas para avisar o
+    # usuário, em vez de virarem "Mês" == NaN e quebrar a validação abaixo.
     linhas_antes = len(df)
     df = df.dropna(subset=["Ano", "Mês"])
     linhas_vazias = linhas_antes - len(df)

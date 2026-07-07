@@ -573,6 +573,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=(4, 2)
         )
         linha += 1
+        self.check_balcao = ttk.Checkbutton(
+            frame, 
+            text="Desconsiderar clientes balcão da frequência", 
+            command=self._marcar_configuracao_alterada
+        )
+        self.check_balcao.state(["selected", "!alternate"])
+        self.check_balcao.grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        linha += 1
+
         self.botao_atualizar_preview = ttk.Button(frame, text="Atualizar prévia dos grupos", command=self._pre_visualizar_grupos)
         self.botao_atualizar_preview.grid(row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=2)
         linha += 1
@@ -718,7 +727,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.progress.start(10)
         self.update_idletasks()
         try:
-            self.df = af.carregar_csv(caminho)
+            self.df, linhas_vazias = af.carregar_csv(caminho)
+            if linhas_vazias > 0:
+                messagebox.showinfo("Linhas vazias ignoradas", f"{linhas_vazias} linha(s) com Ano ou Mês vazio ignorada(s).")
         except af.ErroCarregamentoCSV as exc:
             self.progress.stop()
             messagebox.showerror("Erro ao carregar CSV", str(exc))
@@ -956,11 +967,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             messagebox.showerror("Parâmetros inválidos", "Verifique os campos numéricos dos grupos.")
             return
 
-        cortes_ajustados, contagens = af.sugerir_cortes_grupos(
-            self.df, self._clientes_excluidos(), cortes_iniciais, max_por_grupo
+        cortes, contagens = af.sugerir_cortes_grupos(
+            self.df, self._clientes_excluidos(), cortes_iniciais, max_por_grupo, desconsiderar_balcao=self.check_balcao.instate(["selected"])
         )
-        self._escrever_cortes_grupos(cortes_ajustados)
-        self._registrar_log(f"Cortes sugeridos automaticamente: {cortes_ajustados} (máx. {max_por_grupo} clientes/grupo).")
+        self._escrever_cortes_grupos(cortes)
+        self._registrar_log(f"Cortes sugeridos automaticamente: {cortes} (máx. {max_por_grupo} clientes/grupo).")
         self._recalcular_classificacoes()
 
     def _pre_visualizar_grupos(self):
@@ -991,13 +1002,16 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         clientes_excluidos = set(self._clientes_excluidos())
 
-        classificacao_clientes = af.classificar_clientes_agregado(self.df, clientes_excluidos, cortes)
+        classificacao_clientes = af.classificar_clientes_agregado(self.df, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
         mapa_grupo_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Faixa"]))
+        mapa_percentual_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Percentual_Individual"]))
         for item in self.dados_clientes:
             if item["cliente"] in clientes_excluidos:
                 item["grupo"] = "Excluído"
+                item["percentual"] = 0.0
             else:
                 item["grupo"] = mapa_grupo_cliente.get(item["cliente"], "-")
+                item["percentual"] = mapa_percentual_cliente.get(item["cliente"], 0.0)
 
         classificacao_produtos = af.classificar_produtos_agregado(self.df, corte_produtos)
         mapa_grupo_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Faixa"]))
@@ -1020,7 +1034,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             if self.combo_grupo_produtos.get() == "Todos":
                 self.combo_grupo_produtos.set("Grupo 1")
 
-        contagens = af.contar_clientes_por_grupo(self.df, clientes_excluidos, cortes)
+        contagens = af.contar_clientes_por_grupo(self.df, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
         self._exibir_contagens_grupos(cortes, contagens)
 
         self._renderizar_clientes(self.entrada_busca_clientes.get())
@@ -1199,13 +1213,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._thread_geracao = threading.Thread(
             target=self._executar_geracao_em_thread,
             args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
-                  periodos_queda, set(chaves_selecionadas)),
+                  periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"])),
             daemon=True,
         )
         self._thread_geracao.start()
 
     def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
-                                     cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas):
+                                     cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao):
         try:
             resultados = af.gerar_analises_completas(
                 df_filtrado, granularidades,
@@ -1215,6 +1229,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 periodos_queda_consecutiva=periodos_queda,
                 chaves_solicitadas=chaves_selecionadas,
                 callback_log=lambda mensagem: self._registrar_log(mensagem),
+                desconsiderar_balcao=desconsiderar_balcao,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:

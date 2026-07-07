@@ -11,6 +11,7 @@ Sistema desktop para análise de vendas a partir de um CSV, com geração de rel
 - `splash.py` — tela inicial (logo + loader) exibida enquanto os módulos pesados carregam.
 - `perfil.py` — perfil local do usuário (nome, tamanho de fonte), salvo em SQLite.
 - `recursos.py` — resolução de caminhos (logo, pasta de dados locais) compatível com dev e `.exe`.
+- `atualizacoes.py` — checagem de nova versão publicada como Release no GitHub.
 - `assets/` — logo da empresa (`logo_2d.png` e `logo_2d.ico`).
 
 Pastas geradas em tempo de execução (ao lado do executável, não versionadas):
@@ -54,24 +55,12 @@ print(af.top_produtos(df))
 ## Gerando o executável Windows (PyInstaller)
 
 ```bash
-pyinstaller --onefile --windowed --icon=assets/logo_2d.ico --add-data "assets;assets" --collect-all sv_ttk app.py
+pyinstaller AnalisadorInteligente.spec
 ```
 
-Observações:
+O spec já cobre os dados/hidden imports necessários (`assets/`, tema `sv-ttk`, `reportlab` para os relatórios em PDF). O executável final fica em `dist/AnalisadorInteligente.exe`. Na primeira execução em cada máquina, ele cria as pastas `logs/` e `dados_locais/` ao lado do `.exe`.
 
-- `--add-data "assets;assets"` é obrigatório — é o que embute a logo dentro do `.exe` (em Linux/Mac o separador é `:` em vez de `;`).
-- `--collect-all sv_ttk` é obrigatório — o tema visual depende de arquivos `.tcl`/`.png` que o PyInstaller não detecta sozinho; sem essa flag o app abre sem estilo (aparência padrão feia do Tk).
-- Se o PyInstaller reclamar de módulos não encontrados em tempo de execução (comum com `pandas`/`openpyxl`), adicione hidden imports:
-  ```bash
-  pyinstaller --onefile --windowed --icon=assets/logo_2d.ico --add-data "assets;assets" --collect-all sv_ttk ^
-    --hidden-import=pandas ^
-    --hidden-import=openpyxl ^
-    --hidden-import=openpyxl.cell._writer ^
-    --hidden-import=tkinterdnd2 ^
-    app.py
-  ```
-- O `tkinterdnd2` depende de arquivos de dados (Tcl) que às vezes não são coletados automaticamente pelo PyInstaller. Se o `.exe` gerado falhar ao iniciar o drag-and-drop, adicione `--collect-all tkinterdnd2` ao comando.
-- O executável final fica em `dist/app.exe`. Na primeira execução em cada máquina, ele cria as pastas `logs/` e `dados_locais/` ao lado do `.exe`.
+Para o processo completo de versionamento e publicação de uma release (que é o que aciona o aviso de atualização para quem já tem o `.exe`), veja [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Formato esperado do CSV
 

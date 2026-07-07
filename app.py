@@ -220,7 +220,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar_janela)
 
-        threading.Thread(target=self._verificar_atualizacoes_em_segundo_plano, daemon=True).start()
+        threading.Thread(target=self._verificar_atualizacoes, daemon=True).start()
 
     def report_callback_exception(self, exc, val, tb):
         # O .exe roda sem console (modo janela) — sem isso, qualquer exceção
@@ -302,6 +302,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         menu_arquivo.add_command(label="Selecionar CSV de vendas...", accelerator="Ctrl+O", command=self._selecionar_csv)
         menu_arquivo.add_command(label="Limpar base", command=self._limpar_base)
         menu_arquivo.add_separator()
+        menu_arquivo.add_command(label="Buscar atualizações...", command=self._buscar_atualizacoes_manual)
+        menu_arquivo.add_separator()
         menu_arquivo.add_command(label="Sair", accelerator="Ctrl+Q", command=self._ao_fechar_janela)
         barra_menu.add_cascade(label="Arquivo", menu=menu_arquivo)
 
@@ -309,14 +311,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         menu_relatorios.add_command(label="Gerar Relatório Padrão", accelerator="Ctrl+G", command=self._gerar_relatorio_padrao)
         menu_relatorios.add_command(label="Atualizar prévia dos grupos", accelerator="F5", command=self._pre_visualizar_grupos)
         barra_menu.add_cascade(label="Relatórios", menu=menu_relatorios)
-
-        menu_exibir = tk.Menu(barra_menu, tearoff=False)
-        self.var_tema_escuro = tk.BooleanVar(value=False)
-        menu_exibir.add_checkbutton(
-            label="Tema escuro", accelerator="Ctrl+D",
-            variable=self.var_tema_escuro, command=self._alternar_tema,
-        )
-        barra_menu.add_cascade(label="Exibir", menu=menu_exibir)
 
         menu_ajuda = tk.Menu(barra_menu, tearoff=False)
         menu_ajuda.add_command(label="Sobre", accelerator="F1", command=self._mostrar_sobre)
@@ -328,16 +322,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.bind_all("<Control-q>", lambda evento: self._ao_fechar_janela())
         self.bind_all("<Control-g>", lambda evento: self._gerar_relatorio_padrao())
         self.bind_all("<F5>", lambda evento: self._pre_visualizar_grupos())
-        self.bind_all("<Control-d>", lambda evento: (self.var_tema_escuro.set(not self.var_tema_escuro.get()), self._alternar_tema()))
         self.bind_all("<F1>", lambda evento: self._mostrar_sobre())
-
-    def _alternar_tema(self):
-        sv_ttk.set_theme("dark" if self.var_tema_escuro.get() else "light")
-        self._aplicar_estilos_customizados()
-        if hasattr(self, "botoes_nav"):
-            self._atualizar_cores_nav()
-        if hasattr(self, "arvore_clientes"):
-            self._atualizar_zebra_arvores()
 
     def _aplicar_estilos_customizados(self):
         estilo = ttk.Style(self)
@@ -346,9 +331,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         estilo.map("Treeview", background=[("selected", COR_ACCENT)], foreground=[("selected", "white")])
 
     def _atualizar_zebra_arvores(self):
-        escuro = self.var_tema_escuro.get()
-        cor_par = "#232323" if escuro else "#eef2f6"
-        cor_impar = "#1c1c1c" if escuro else "#ffffff"
+        cor_par = "#eef2f6"
+        cor_impar = "#ffffff"
         for arvore in (self.arvore_clientes, self.arvore_produtos):
             arvore.tag_configure("par", background=cor_par)
             arvore.tag_configure("impar", background=cor_impar)
@@ -440,13 +424,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         rotulo.configure(background=self._cor_hover_nav if entrando else self._cor_fundo_nav)
 
     def _atualizar_cores_nav(self):
-        # Cores oficiais do tema sv_ttk (light.tcl/dark.tcl) — o ttk.Style().lookup()
+        # Cores oficiais do tema sv_ttk claro (light.tcl) — o ttk.Style().lookup()
         # não retorna essas cores porque o tema é baseado em sprites de imagem,
         # não em "background" configurado por classe de estilo.
-        escuro = self.var_tema_escuro.get()
-        self._cor_fundo_nav = "#1c1c1c" if escuro else "#fafafa"
-        self._cor_texto_nav = "#fafafa" if escuro else "#1c1c1c"
-        self._cor_hover_nav = "#2b619e" if escuro else "#d6e4f0"
+        self._cor_fundo_nav = "#fafafa"
+        self._cor_texto_nav = "#1c1c1c"
+        self._cor_hover_nav = "#d6e4f0"
         for nome, rotulo in self.botoes_nav.items():
             ativo = nome == self.pagina_ativa
             rotulo.configure(
@@ -1089,33 +1072,58 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     self._ao_concluir_geracao(dados)
                 elif tipo == "erro":
                     self._ao_falhar_geracao(dados)
-                elif tipo == "atualizacao_disponivel":
-                    self._avisar_nova_versao(dados)
+                elif tipo == "atualizacao_checada":
+                    self._ao_checar_atualizacao(dados)
         except queue.Empty:
             pass
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
 
-    def _verificar_atualizacoes_em_segundo_plano(self):
+    def _verificar_atualizacoes(self, manual=False):
         # Roda em thread separada (chamada de rede) — nunca deve travar a
-        # abertura do sistema nem gerar popup se falhar (sem internet, etc).
+        # abertura do sistema. A checagem automática do startup só interrompe
+        # o usuário se houver versão nova (falha vira só uma linha no log,
+        # pra dar pra diagnosticar depois); a manual (menu Arquivo > Buscar
+        # atualizações) sempre mostra o resultado, incluindo erro.
         try:
             resultado = atualizacoes.verificar_nova_versao()
-        except Exception:
-            resultado = None
+        except Exception as exc:
+            self.fila_eventos.put(("atualizacao_checada", ("erro", str(exc), manual)))
+            return
         if resultado:
-            self.fila_eventos.put(("atualizacao_disponivel", resultado))
+            self.fila_eventos.put(("atualizacao_checada", ("disponivel", resultado, manual)))
+        else:
+            self.fila_eventos.put(("atualizacao_checada", ("atualizado", None, manual)))
 
-    def _avisar_nova_versao(self, dados):
-        tag, url_release = dados
-        self._registrar_log(f"Nova versão disponível no GitHub: {tag} (versão atual: {VERSAO_ATUAL}).")
-        abrir = messagebox.askyesno(
-            "Nova versão disponível",
-            f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
-            f"Versão instalada: {VERSAO_ATUAL}.\n\n"
-            "Deseja abrir a página de download agora?",
-        )
-        if abrir:
-            webbrowser.open(url_release)
+    def _buscar_atualizacoes_manual(self):
+        self._registrar_log("Verificando atualizações...")
+        threading.Thread(target=self._verificar_atualizacoes, args=(True,), daemon=True).start()
+
+    def _ao_checar_atualizacao(self, dados):
+        status, info, manual = dados
+        if status == "disponivel":
+            tag, url_release = info
+            self._registrar_log(f"Nova versão disponível no GitHub: {tag} (versão atual: {VERSAO_ATUAL}).")
+            abrir = messagebox.askyesno(
+                "Nova versão disponível",
+                f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
+                f"Versão instalada: {VERSAO_ATUAL}.\n\n"
+                "Deseja abrir a página de download agora?",
+            )
+            if abrir:
+                webbrowser.open(url_release)
+        elif status == "atualizado":
+            self._registrar_log(f"Checagem de atualização: versão {VERSAO_ATUAL} já é a mais recente.")
+            if manual:
+                messagebox.showinfo("Buscar atualizações", f"Você já está na versão mais recente ({VERSAO_ATUAL}).")
+        elif status == "erro":
+            self._registrar_log(f"Falha ao checar atualizações: {info}", nivel="error")
+            if manual:
+                messagebox.showerror(
+                    "Buscar atualizações",
+                    f"Não foi possível verificar atualizações:\n{info}\n\n"
+                    "Verifique a conexão com a internet (ou se há proxy/firewall bloqueando "
+                    "acesso a api.github.com) e tente novamente.",
+                )
 
     def _anexar_log_ui(self, mensagem):
         marca_horario = datetime.now().strftime("%H:%M:%S")

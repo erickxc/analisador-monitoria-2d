@@ -29,9 +29,9 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Ao abrir, uma tela de splash com a logo aparece enquanto os motores de análise são preparados; em seguida a janela principal abre com tema visual moderno ([sv-ttk](https://github.com/rdbende/Sun-Valley-ttk-theme), estilo Windows 11 — alterne para escuro em Exibir > Tema escuro ou `Ctrl+D`) e 5 abas:
+Ao abrir, uma tela de splash com a logo aparece enquanto os motores de análise são preparados; em seguida a janela principal abre com tema visual moderno ([sv-ttk](https://github.com/rdbende/Sun-Valley-ttk-theme), estilo Windows 11) e 5 abas:
 
-**Atalhos de teclado:** `Ctrl+O` selecionar CSV, `Ctrl+G` gerar relatório padrão, `F5` atualizar prévia dos grupos, `Ctrl+D` alternar tema claro/escuro, `Ctrl+Q` sair, `F1` sobre.
+**Atalhos de teclado:** `Ctrl+O` selecionar CSV, `Ctrl+G` gerar relatório padrão, `F5` atualizar prévia dos grupos, `Ctrl+Q` sair, `F1` sobre.
 
 1. **Configurações** — selecione o CSV de vendas, marque clientes a excluir e produtos a considerar (produtos sem descrição aparecem agrupados como "Não harmonizados"), ajuste os cortes de segmentação e as granularidades. Use "Sugerir cortes automaticamente" para limitar clientes por grupo, e "Atualizar prévia dos grupos" sempre que mudar alguma marcação (o botão avisa quando há mudança pendente).
 2. **Relatório Padrão** — escolha, em um catálogo, quais relatórios prontos quer no Excel final (Venda por Cliente, por Fabricante, por Produto, Segmentação ABC, Poder de Compra, Migração, Tendências, Boletim de Churn etc.) e clique em "Gerar Relatório Padrão".

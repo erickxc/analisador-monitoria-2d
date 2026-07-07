@@ -24,7 +24,7 @@ import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
 
 from recursos import (
-    CAMINHO_LOGO, CAMINHO_LOGO_ICO, NOME_SISTEMA, NOME_EMPRESA, TITULO_JANELA,
+    CAMINHO_LOGO, CAMINHO_LOGO_ICO, CAMINHO_LOGO_ICONE, NOME_SISTEMA, NOME_EMPRESA, TITULO_JANELA,
     VERSAO_ATUAL, pasta_base_execucao,
 )
 import perfil
@@ -262,7 +262,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         except tk.TclError:
             pass
         try:
-            self._icone_janela = tk.PhotoImage(file=CAMINHO_LOGO)
+            self._icone_janela = tk.PhotoImage(file=CAMINHO_LOGO_ICONE)
             self.iconphoto(True, self._icone_janela)
         except tk.TclError:
             pass
@@ -272,7 +272,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         cabecalho.pack(fill="x", side="top")
 
         try:
-            logo_imagem = tk.PhotoImage(file=CAMINHO_LOGO)
+            # Só a marca (sem texto) — o logo completo, reduzido a essa
+            # altura, deixava o texto "2D CONSULTORES" ilegível/cortado.
+            logo_imagem = tk.PhotoImage(file=CAMINHO_LOGO_ICONE)
             fator = max(1, logo_imagem.height() // 44)
             if fator > 1:
                 logo_imagem = logo_imagem.subsample(fator, fator)
@@ -1500,11 +1502,11 @@ def _formatar_cabecalho(planilha):
 
 
 def _inserir_logo(planilha, coluna_ancora, linha_ancora=1, altura_pixels=34):
-    """Insere a logo da 2D Consultores em miniatura, sem sobrepor os dados."""
-    if ImagemExcel is None or not os.path.exists(CAMINHO_LOGO):
+    """Insere a marca da 2D Consultores em miniatura, sem sobrepor os dados."""
+    if ImagemExcel is None or not os.path.exists(CAMINHO_LOGO_ICONE):
         return
     try:
-        imagem = ImagemExcel(CAMINHO_LOGO)
+        imagem = ImagemExcel(CAMINHO_LOGO_ICONE)
         proporcao = imagem.width / imagem.height
         imagem.height = altura_pixels
         imagem.width = altura_pixels * proporcao

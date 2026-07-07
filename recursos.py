@@ -47,3 +47,8 @@ TITULO_JANELA = f"{NOME_SISTEMA} v{VERSAO_ATUAL} - {NOME_EMPRESA}"
 
 CAMINHO_LOGO = caminho_recurso("assets", "logo_2d.png")
 CAMINHO_LOGO_ICO = caminho_recurso("assets", "logo_2d.ico")
+
+# Só a marca (sem o texto "2D CONSULTORES"), quadrada — para usos pequenos
+# (ícone da janela, logo inline no cabeçalho, logo por aba do Excel), onde
+# o logo completo com texto fica ilegível/cortado ao ser reduzido.
+CAMINHO_LOGO_ICONE = caminho_recurso("assets", "logo_2d_icone.png")

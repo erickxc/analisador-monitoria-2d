@@ -7,6 +7,11 @@
 - Só mesclar o PR depois de rodar o app de verdade (`python app.py`) e confirmar que a mudança funciona e não quebrou outra coisa — não basta o código "parecer certo" na leitura.
 - Se duas branches tocaram a mesma função por motivos diferentes, resolver o conflito com as duas intenções em mente (não é só aceitar "a minha" ou "a do outro") e testar de novo depois de resolver.
 
+### Quem faz o quê
+
+- **Yann** abre e atribui PRs — pode criar branch, trabalhar e mandar para revisão a qualquer momento.
+- **Somente o erick (erickxc) revisa e mescla no `main`.** Isso vale principalmente porque o `main` é o que vira release/produção — nenhum PR sobe pra lá sem passar pela revisão dele primeiro, mesmo que o GitHub (plano free, sem branch protection) não bloqueie tecnicamente outra pessoa de mesclar.
+
 ## Versionamento
 
 - A versão embutida no executável vive em `VERSAO_ATUAL` (`recursos.py`) e segue [semver](https://semver.org/lang/pt-BR/): `vX.Y.Z`.

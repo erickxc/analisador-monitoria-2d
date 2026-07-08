@@ -95,21 +95,26 @@ def baixar_atualizacao(url_download_exe, callback_progresso=None):
     return destino
 
 
-def aplicar_atualizacao_e_reiniciar(caminho_novo_exe):
+def aplicar_atualizacao(caminho_novo_exe):
     """
-    Agenda a substituição do executável atual pelo baixado e finaliza o
-    processo atual. A troca roda num script .bat separado (sobrevive ao
-    fechamento deste processo) que tenta mover o arquivo novo por cima do
-    atual a cada segundo — até o Windows liberar o arquivo, já que ele
-    ainda está em uso enquanto este processo não terminar — e então reabre
-    o programa. Só faz sentido rodando como .exe (frozen): em modo
-    desenvolvimento não há um único arquivo pra substituir.
+    Agenda a substituição do executável atual pelo baixado. A troca roda
+    num script .bat separado (sobrevive ao fechamento deste processo) que
+    tenta mover o arquivo novo por cima do atual a cada segundo — até o
+    Windows liberar o arquivo, já que ele ainda está em uso enquanto este
+    processo não terminar. Só faz sentido rodando como .exe (frozen): em
+    modo desenvolvimento não há um único arquivo pra substituir.
 
-    Depois do move bem-sucedido, espera mais um instante antes de reabrir:
-    sem essa folga, o antivírus (proteção em tempo real do Windows Defender,
-    por exemplo) pode ainda estar varrendo o executável recém-escrito
-    (não assinado) no exato momento do `start`, e o bootloader do
-    PyInstaller falha com "Failed to load Python DLL" — visto na prática.
+    Propositalmente NÃO reabre o programa sozinho no final (isso já foi
+    tentado de três formas diferentes — subprocess.Popen direto,
+    CREATE_BREAKAWAY_FROM_JOB, e via Agendador de Tarefas — e as três vezes
+    o antivírus bloqueou com "Failed to load Python DLL", reproduzido e
+    confirmado na prática: o padrão "processo A gera algo que executa uma
+    cópia nova de A" é tratado como comportamento típico de malware que se
+    auto-substitui, e isso não depende de timing nem de linhagem de
+    processo — as tentativas de contornar isso falharam todas). Só trocar o
+    arquivo em segundo plano, sem nunca executar o resultado automaticamente,
+    evita esse bloqueio por completo. O chamador deve avisar o usuário para
+    reabrir manualmente.
     """
     if not getattr(sys, "frozen", False):
         raise RuntimeError("Instalação automática só é possível na versão empacotada (.exe), não em modo desenvolvimento.")
@@ -125,10 +130,6 @@ ping -n 2 127.0.0.1 >nul
 move /y "{caminho_novo_exe}" "{caminho_atual}" >nul 2>&1
 if exist "{caminho_novo_exe}" (
     if %tentativas% lss 20 goto esperar
-)
-if not exist "{caminho_novo_exe}" (
-    ping -n 4 127.0.0.1 >nul
-    start "" "{caminho_atual}"
 )
 del "%~f0"
 """

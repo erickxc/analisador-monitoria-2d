@@ -29,7 +29,7 @@ from recursos import REPOSITORIO_GITHUB, VERSAO_ATUAL
 
 TIMEOUT_SEGUNDOS = 4
 TIMEOUT_DOWNLOAD_SEGUNDOS = 30
-NOME_EXE_TEMPORARIO = "AnalisadorInteligente_novo.exe"
+NOME_EXE_TEMPORARIO = "Monitor2D_novo.exe"
 
 
 def _versao_para_tupla(versao):
@@ -79,7 +79,7 @@ def baixar_atualizacao(url_download_exe, callback_progresso=None):
     (percentual fica 0 se o servidor não informar o tamanho do arquivo).
     """
     destino = os.path.join(os.environ.get("TEMP", "."), NOME_EXE_TEMPORARIO)
-    requisicao = urllib.request.Request(url_download_exe, headers={"User-Agent": "AnalisadorInteligente-updater"})
+    requisicao = urllib.request.Request(url_download_exe, headers={"User-Agent": "Monitor2D-updater"})
     with urllib.request.urlopen(requisicao, timeout=TIMEOUT_DOWNLOAD_SEGUNDOS) as resposta:
         total = int(resposta.headers.get("Content-Length", 0))
         baixado = 0

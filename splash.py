@@ -34,11 +34,17 @@ def exibir_splash_e_iniciar(etapas_preparacao, funcao_construir_janela_principal
     splash.configure(bg=COR_FUNDO)
 
     try:
+        # A logo tem texto preto sobre fundo transparente (pensada para fundo
+        # claro) — num Label com o mesmo fundo escuro da splash, o texto
+        # ("2D CONSULTORES") fica ilegível (preto sobre quase-preto). Por
+        # isso o logo fica num cartão branco, não direto no fundo escuro.
         logo_imagem = tk.PhotoImage(file=CAMINHO_LOGO)
         fator = max(1, logo_imagem.width() // 260)
         if fator > 1:
             logo_imagem = logo_imagem.subsample(fator, fator)
-        tk.Label(splash, image=logo_imagem, bg=COR_FUNDO).pack(pady=(36, 12))
+        cartao_logo = tk.Frame(splash, bg="white")
+        cartao_logo.pack(pady=(36, 12))
+        tk.Label(cartao_logo, image=logo_imagem, bg="white").pack(padx=16, pady=12)
         splash._logo_imagem_ref = logo_imagem  # evita coleta de lixo da imagem
     except tk.TclError:
         pass

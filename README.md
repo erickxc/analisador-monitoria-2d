@@ -1,4 +1,4 @@
-# Analisador Inteligente — 2D Consultores | Monitores
+# Monitor — 2D Consultores | Monitores
 
 Sistema desktop para análise de vendas a partir de um CSV, com geração de relatórios em Excel (com a logo da empresa), construtor de tabelas dinâmicas (arrastar-e-soltar) e gráficos de dispersão.
 
@@ -54,24 +54,21 @@ print(af.top_produtos(df))
 ## Gerando o executável Windows (PyInstaller)
 
 ```bash
-pyinstaller --onefile --windowed --icon=assets/logo_2d.ico --add-data "assets;assets" --collect-all sv_ttk app.py
+pyinstaller Monitor2D.spec
 ```
+
+O `Monitor2D.spec` já inclui tudo que o build precisa — não reconstrua o comando na mão, edite o `.spec` se precisar mudar algo:
+
+- `datas=[('assets', 'assets')]` — embute a logo/ícones dentro do `.exe`.
+- `collect_all('sv_ttk')` — o tema visual depende de arquivos `.tcl`/`.png` que o PyInstaller não detecta sozinho; sem isso o app abre sem estilo (aparência padrão feia do Tk).
+- `collect_all('reportlab')` — necessário pra exportação em PDF funcionar no `.exe`.
+- `icon=['assets\\logo_2d.ico']` — ícone da janela/taskbar (multi-resolução, 16 a 256px).
 
 Observações:
 
-- `--add-data "assets;assets"` é obrigatório — é o que embute a logo dentro do `.exe` (em Linux/Mac o separador é `:` em vez de `;`).
-- `--collect-all sv_ttk` é obrigatório — o tema visual depende de arquivos `.tcl`/`.png` que o PyInstaller não detecta sozinho; sem essa flag o app abre sem estilo (aparência padrão feia do Tk).
-- Se o PyInstaller reclamar de módulos não encontrados em tempo de execução (comum com `pandas`/`openpyxl`), adicione hidden imports:
-  ```bash
-  pyinstaller --onefile --windowed --icon=assets/logo_2d.ico --add-data "assets;assets" --collect-all sv_ttk ^
-    --hidden-import=pandas ^
-    --hidden-import=openpyxl ^
-    --hidden-import=openpyxl.cell._writer ^
-    --hidden-import=tkinterdnd2 ^
-    app.py
-  ```
-- O `tkinterdnd2` depende de arquivos de dados (Tcl) que às vezes não são coletados automaticamente pelo PyInstaller. Se o `.exe` gerado falhar ao iniciar o drag-and-drop, adicione `--collect-all tkinterdnd2` ao comando.
-- O executável final fica em `dist/app.exe`. Na primeira execução em cada máquina, ele cria as pastas `logs/` e `dados_locais/` ao lado do `.exe`.
+- O `tkinterdnd2` tem hook oficial no `pyinstaller-hooks-contrib` — não precisa de `--collect-all` manual.
+- Se o PyInstaller reclamar de módulos não encontrados em tempo de execução, adicione a `hiddenimports=[...]` no `.spec` (ex.: `'openpyxl.cell._writer'`).
+- O executável final fica em `dist/Monitor2D.exe`. Na primeira execução em cada máquina, ele cria as pastas `logs/` e `dados_locais/` ao lado do `.exe`.
 
 ## Formato esperado do CSV
 

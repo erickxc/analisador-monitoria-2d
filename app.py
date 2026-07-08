@@ -1,5 +1,5 @@
 """
-Interface principal do Analisador Inteligente (2D Consultores | Monitores).
+Interface principal do Monitor (2D Consultores | Monitores).
 
 Integra o motor de análise (analise_funil.py), o construtor de relatórios
 personalizados (pivot_builder.py) e os gráficos de dispersão (graficos.py)
@@ -23,6 +23,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
 
+import recursos
 from recursos import (
     CAMINHO_LOGO, CAMINHO_LOGO_ICO, CAMINHO_LOGO_ICONE, NOME_SISTEMA, NOME_EMPRESA, TITULO_JANELA,
     VERSAO_ATUAL, pasta_base_execucao,
@@ -169,8 +170,7 @@ CATALOGO_RELATORIOS = [
 
 
 def _preparar_logger():
-    pasta_logs = os.path.join(pasta_base_execucao(), "logs")
-    os.makedirs(pasta_logs, exist_ok=True)
+    pasta_logs = recursos.pasta_logs()
     nome_arquivo = f"analise_funil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     caminho_log = os.path.join(pasta_logs, nome_arquivo)
 
@@ -495,34 +495,40 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         topo = ttk.Frame(master)
         topo.pack(fill="x", padx=10, pady=8)
 
-        ttk.Button(topo, text="Selecionar CSV de vendas...", command=self._selecionar_csv).pack(side="left")
-        self.label_arquivo = ttk.Label(topo, text="Nenhum arquivo carregado")
-        self.label_arquivo.pack(side="left", padx=10)
+        grupo_base = ttk.LabelFrame(topo, text="Base de dados")
+        grupo_base.pack(side="left", fill="y")
+        linha_base = ttk.Frame(grupo_base)
+        linha_base.pack(padx=8, pady=6)
+        ttk.Button(linha_base, text="Selecionar CSV de vendas...", command=self._selecionar_csv).pack(side="left")
+        self.botao_limpar_base = ttk.Button(linha_base, text="Limpar base", command=self._limpar_base, state="disabled")
+        self.botao_limpar_base.pack(side="left", padx=(6, 0))
+        self.label_arquivo = ttk.Label(grupo_base, text="Nenhum arquivo carregado", foreground="gray")
+        self.label_arquivo.pack(anchor="w", padx=8, pady=(0, 6))
 
-        self.botao_limpar_base = ttk.Button(topo, text="Limpar base", command=self._limpar_base, state="disabled")
-        self.botao_limpar_base.pack(side="left", padx=4)
-
-        ttk.Separator(topo, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(topo, text="Salvar configuração...", command=self._salvar_configuracao_analise).pack(side="left")
-        ttk.Button(topo, text="Carregar configuração...", command=self._carregar_configuracao_analise).pack(side="left", padx=4)
-
-        frame_zoom = ttk.Frame(topo)
-        frame_zoom.pack(side="right")
-        ttk.Label(frame_zoom, text="Zoom:").pack(side="left", padx=(0, 4))
-        ttk.Button(frame_zoom, text="-", width=3, command=lambda: self._aplicar_zoom(1 / 1.1)).pack(side="left")
-        self.label_zoom = ttk.Label(frame_zoom, text="100%", width=6, anchor="center")
-        self.label_zoom.pack(side="left", padx=2)
-        ttk.Button(frame_zoom, text="+", width=3, command=lambda: self._aplicar_zoom(1.1)).pack(side="left")
-        ttk.Button(frame_zoom, text="Reset", command=lambda: self._aplicar_zoom(None)).pack(side="left", padx=(4, 0))
-
-        linha_empresa = ttk.Frame(master)
-        linha_empresa.pack(fill="x", padx=10, pady=(0, 8))
-        ttk.Label(linha_empresa, text="Empresa analisada:").pack(side="left")
-        self.entrada_nome_empresa = ttk.Entry(linha_empresa, width=40)
-        self.entrada_nome_empresa.pack(side="left", padx=(6, 0))
+        grupo_empresa = ttk.LabelFrame(topo, text="Empresa analisada")
+        grupo_empresa.pack(side="left", fill="y", padx=8)
+        self.entrada_nome_empresa = ttk.Entry(grupo_empresa, width=32)
+        self.entrada_nome_empresa.pack(padx=8, pady=(6, 2))
         ttk.Label(
-            linha_empresa, text="(aparece na capa e no nome do arquivo dos relatórios)", foreground="gray"
-        ).pack(side="left", padx=8)
+            grupo_empresa, text="Aparece na capa e no nome do arquivo", foreground="gray", font=("Segoe UI", 8),
+        ).pack(padx=8, pady=(0, 6))
+
+        grupo_config = ttk.LabelFrame(topo, text="Configuração da análise")
+        grupo_config.pack(side="left", fill="y")
+        linha_config = ttk.Frame(grupo_config)
+        linha_config.pack(padx=8, pady=6)
+        ttk.Button(linha_config, text="Salvar configuração...", command=self._salvar_configuracao_analise).pack(side="left")
+        ttk.Button(linha_config, text="Carregar configuração...", command=self._carregar_configuracao_analise).pack(side="left", padx=(6, 0))
+
+        grupo_zoom = ttk.LabelFrame(topo, text="Zoom")
+        grupo_zoom.pack(side="right")
+        linha_zoom = ttk.Frame(grupo_zoom)
+        linha_zoom.pack(padx=8, pady=6)
+        ttk.Button(linha_zoom, text="-", width=3, command=lambda: self._aplicar_zoom(1 / 1.1)).pack(side="left")
+        self.label_zoom = ttk.Label(linha_zoom, text="100%", width=5, anchor="center")
+        self.label_zoom.pack(side="left", padx=4)
+        ttk.Button(linha_zoom, text="+", width=3, command=lambda: self._aplicar_zoom(1.1)).pack(side="left")
+        ttk.Button(linha_zoom, text="Reset", command=lambda: self._aplicar_zoom(None)).pack(side="left", padx=(6, 0))
 
         corpo = ttk.Frame(master)
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -539,78 +545,97 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _montar_coluna_parametros(self, master):
         frame = ttk.LabelFrame(master, text="Parâmetros (valem para todos os relatórios)")
 
+        LARGURA_ROTULO = 26
+
+        # --- Bloco 1: Segmentação (todos os inputs relacionados juntos,
+        # rótulo e campo sempre nas mesmas duas colunas) -------------------
+        bloco_segmentacao = ttk.LabelFrame(frame, text="Segmentação")
+        bloco_segmentacao.pack(fill="x", padx=6, pady=(6, 6))
+
         linha = 0
-        ttk.Label(frame, text="Corte de produtos por receita (%):").grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+        ttk.Button(bloco_segmentacao, text="Sugerir cortes automaticamente", command=self._sugerir_cortes_automaticamente).grid(
+            row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=(6, 2)
+        )
         linha += 1
-        self.entrada_corte_produtos = ttk.Entry(frame, width=8)
+        self.botao_atualizar_preview = ttk.Button(bloco_segmentacao, text="Atualizar prévia dos grupos", command=self._pre_visualizar_grupos)
+        self.botao_atualizar_preview.grid(row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=2)
+        linha += 1
+        self.label_contagens_grupos = ttk.Label(
+            bloco_segmentacao, text="Contagens: clique em 'Atualizar prévia' para calcular.",
+            wraplength=230, foreground="#1565c0",
+        )
+        self.label_contagens_grupos.grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 6))
+        linha += 1
+        ttk.Separator(bloco_segmentacao, orient="horizontal").grid(
+            row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=(2, 6)
+        )
+        linha += 1
+
+        ttk.Label(bloco_segmentacao, text="Corte de produtos por receita (%):", width=LARGURA_ROTULO, anchor="w").grid(
+            row=linha, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entrada_corte_produtos = ttk.Entry(bloco_segmentacao, width=8)
         self.entrada_corte_produtos.insert(0, "80")
         self.entrada_corte_produtos.bind("<KeyRelease>", lambda evento: self._marcar_configuracao_alterada())
-        self.entrada_corte_produtos.grid(row=linha, column=0, sticky="w", padx=6, pady=2)
-        ttk.Label(frame, text="(padrão 80% — ajustável)", foreground="gray").grid(row=linha, column=1, sticky="w")
+        self.entrada_corte_produtos.grid(row=linha, column=1, sticky="w", padx=6, pady=4)
         linha += 1
-
-        ttk.Separator(frame, orient="horizontal").grid(row=linha, column=0, columnspan=2, sticky="we", pady=8)
-        linha += 1
-
-        ttk.Label(frame, text="Grupos de clientes por % de receita acumulada:").grid(
+        ttk.Label(bloco_segmentacao, text="padrão 80% — ajustável", foreground="gray", font=("Segoe UI", 8)).grid(
             row=linha, column=0, columnspan=2, sticky="w", padx=6
         )
         linha += 1
+
         self.entradas_corte_grupo = []
         for i, valor_padrao in enumerate(("30", "50", "60")):
-            ttk.Label(frame, text=f"Grupo {i + 1} até (%):").grid(row=linha, column=0, sticky="w", padx=6, pady=2)
-            entrada = ttk.Entry(frame, width=8)
+            ttk.Label(bloco_segmentacao, text=f"Grupo {i + 1} de clientes até (%):", width=LARGURA_ROTULO, anchor="w").grid(
+                row=linha, column=0, sticky="w", padx=6, pady=4
+            )
+            entrada = ttk.Entry(bloco_segmentacao, width=8)
             entrada.insert(0, valor_padrao)
             entrada.bind("<KeyRelease>", lambda evento: self._marcar_configuracao_alterada())
-            entrada.grid(row=linha, column=1, sticky="w", padx=6, pady=2)
+            entrada.grid(row=linha, column=1, sticky="w", padx=6, pady=4)
             self.entradas_corte_grupo.append(entrada)
             linha += 1
 
-        ttk.Label(frame, text="Máx. clientes por grupo:").grid(row=linha, column=0, sticky="w", padx=6, pady=2)
-        self.entrada_max_por_grupo = ttk.Entry(frame, width=8)
+        ttk.Label(bloco_segmentacao, text="Máx. clientes por grupo:", width=LARGURA_ROTULO, anchor="w").grid(
+            row=linha, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entrada_max_por_grupo = ttk.Entry(bloco_segmentacao, width=8)
         self.entrada_max_por_grupo.insert(0, "10")
-        self.entrada_max_por_grupo.grid(row=linha, column=1, sticky="w", padx=6, pady=2)
+        self.entrada_max_por_grupo.grid(row=linha, column=1, sticky="w", padx=6, pady=4)
         linha += 1
 
-        ttk.Button(frame, text="Sugerir cortes automaticamente", command=self._sugerir_cortes_automaticamente).grid(
-            row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=(4, 2)
-        )
-        linha += 1
         self.check_balcao = ttk.Checkbutton(
-            frame, 
-            text="Desconsiderar clientes balcão da frequência", 
-            command=self._marcar_configuracao_alterada
+            bloco_segmentacao, text="Desconsiderar clientes balcão da frequência",
+            command=self._marcar_configuracao_alterada,
         )
         self.check_balcao.state(["selected", "!alternate"])
-        self.check_balcao.grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        self.check_balcao.grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 0))
         linha += 1
+        ttk.Label(
+            bloco_segmentacao,
+            text="Marcado, eles saem dos grupos e viram faixa \"Balcão\" — não\nsomem: filtre por \"Balcão\" na lista de clientes pra vê-los.",
+            foreground="gray", font=("Segoe UI", 8), justify="left",
+        ).grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
 
-        self.botao_atualizar_preview = ttk.Button(frame, text="Atualizar prévia dos grupos", command=self._pre_visualizar_grupos)
-        self.botao_atualizar_preview.grid(row=linha, column=0, columnspan=2, sticky="we", padx=6, pady=2)
-        linha += 1
+        # --- Bloco 2: Alertas e granularidade ------------------------------
+        bloco_alertas = ttk.LabelFrame(frame, text="Alertas e granularidade")
+        bloco_alertas.pack(fill="x", padx=6, pady=(0, 6))
 
-        self.label_contagens_grupos = ttk.Label(frame, text="Contagens: clique em 'Atualizar prévia' para calcular.", wraplength=230, foreground="#1565c0")
-        self.label_contagens_grupos.grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 8))
-        linha += 1
-
-        ttk.Separator(frame, orient="horizontal").grid(row=linha, column=0, columnspan=2, sticky="we", pady=4)
-        linha += 1
-
-        ttk.Label(frame, text="Períodos seguidos em queda p/ alerta:").grid(row=linha, column=0, sticky="w", padx=6, pady=(6, 2))
-        self.entrada_periodos_queda = ttk.Entry(frame, width=8)
-        self.entrada_periodos_queda.insert(0, "2")
-        self.entrada_periodos_queda.grid(row=linha, column=1, sticky="w", padx=6, pady=(6, 2))
-        linha += 1
-        ttk.Label(frame, text="(aplicado à granularidade escolhida abaixo)", foreground="gray").grid(
-            row=linha, column=0, columnspan=2, sticky="w", padx=6
+        ttk.Label(bloco_alertas, text="Períodos seguidos em queda p/ alerta:", width=LARGURA_ROTULO, anchor="w").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4
         )
-        linha += 1
+        self.entrada_periodos_queda = ttk.Entry(bloco_alertas, width=8)
+        self.entrada_periodos_queda.insert(0, "2")
+        self.entrada_periodos_queda.grid(row=0, column=1, sticky="w", padx=6, pady=4)
+        ttk.Label(bloco_alertas, text="aplicado à granularidade escolhida abaixo", foreground="gray", font=("Segoe UI", 8)).grid(
+            row=1, column=0, columnspan=2, sticky="w", padx=6
+        )
 
-        ttk.Label(frame, text="Granularidade do relatório:").grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(10, 2))
-        linha += 1
-        linha_granularidade = ttk.Frame(frame)
-        linha_granularidade.grid(row=linha, column=0, columnspan=2, sticky="w", padx=6)
-        linha += 1
+        ttk.Label(bloco_alertas, text="Granularidade do relatório:", width=LARGURA_ROTULO, anchor="w").grid(
+            row=2, column=0, sticky="w", padx=6, pady=(10, 4)
+        )
+        linha_granularidade = ttk.Frame(bloco_alertas)
+        linha_granularidade.grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
         self.var_granularidade = tk.StringVar(value="Mensal")
         for granularidade in af.GRANULARIDADES:
             ttk.Radiobutton(
@@ -666,36 +691,38 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         arvore.column("grupo", width=75, anchor="center")
 
         arvore.bind("<Button-1>", lambda evento: self._alternar_checkbox_arvore(evento, arvore, self.estado_clientes))
-        entrada_busca.bind("<KeyRelease>", lambda evento: self._renderizar_clientes(entrada_busca.get()))
+        entrada_busca.bind("<KeyRelease>", lambda evento: self._buscar_clientes(entrada_busca.get()))
         combo_grupo.bind("<<ComboboxSelected>>", lambda evento: self._renderizar_clientes(entrada_busca.get()))
 
         self.arvore_clientes = arvore
         self.entrada_busca_clientes = entrada_busca
         self.combo_grupo_clientes = combo_grupo
-        self.dados_clientes = []  # lista de dicts: cliente, receita, percentual, grupo, frequencia
+        self.dados_clientes = []  # lista de dicts: cliente, receita, percentual, grupo
         return frame
 
     def _montar_coluna_produtos(self, master):
         frame, entrada_busca, combo_grupo, arvore = self._montar_lista_com_filtro(
-            master, "Produtos considerados na análise", ("check", "produto", "grupo", "frequencia")
+            master, "Produtos considerados na análise", ("check", "produto", "grupo", "freq_simples", "freq_acumulado")
         )
         arvore.heading("check", text="Considerar?")
         arvore.heading("produto", text="Produto", command=self._ordenar_produtos)
         arvore.heading("grupo", text="Grupo")
-        arvore.heading("frequencia", text="Frequência")
+        arvore.heading("freq_simples", text="Freq. Simples")
+        arvore.heading("freq_acumulado", text="Freq. Acumulado")
         arvore.column("check", width=80, anchor="center")
-        arvore.column("produto", width=260, anchor="w")
-        arvore.column("grupo", width=75, anchor="center")
-        arvore.column("frequencia", width=80, anchor="center")
+        arvore.column("produto", width=230, anchor="w")
+        arvore.column("grupo", width=70, anchor="center")
+        arvore.column("freq_simples", width=90, anchor="e")
+        arvore.column("freq_acumulado", width=100, anchor="e")
 
         arvore.bind("<Button-1>", lambda evento: self._alternar_checkbox_arvore(evento, arvore, self.estado_produtos))
-        entrada_busca.bind("<KeyRelease>", lambda evento: self._renderizar_produtos(entrada_busca.get()))
+        entrada_busca.bind("<KeyRelease>", lambda evento: self._buscar_produtos(entrada_busca.get()))
         combo_grupo.bind("<<ComboboxSelected>>", lambda evento: self._renderizar_produtos(entrada_busca.get()))
 
         self.arvore_produtos = arvore
         self.entrada_busca_produtos = entrada_busca
         self.combo_grupo_produtos = combo_grupo
-        self.dados_produtos = []  # lista de dicts: chave, rotulo, grupo, frequencia (não harmonizados fica em 1º)
+        self.dados_produtos = []  # lista de dicts: chave, rotulo, grupo, freq_simples, freq_acumulado (% de receita)
         return frame
 
     def _alternar_checkbox_arvore(self, evento, arvore, dicionario_estado):
@@ -803,6 +830,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._ordem_clientes = ("receita", True)
         self._renderizar_clientes("")
 
+    def _buscar_clientes(self, texto):
+        # Buscar por nome deve achar o cliente esteja ele em qualquer grupo —
+        # senão, procurar alguém que não está no grupo filtrado no momento
+        # simplesmente nunca aparece (parece que "sumiu"/não foi encontrado).
+        if texto.strip() and self.combo_grupo_clientes.get() != "Todos":
+            self.combo_grupo_clientes.set("Todos")
+        self._renderizar_clientes(texto)
+
     def _ordenar_clientes(self, campo):
         campo_atual, decrescente_atual = getattr(self, "_ordem_clientes", (None, True))
         decrescente = (not decrescente_atual) if campo == campo_atual else True
@@ -840,12 +875,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.dados_produtos = []
         if qtd_nao_harmonizados > 0:
             rotulo = f"⚠ {af.DESCRICAO_NAO_HARMONIZADA} ({qtd_nao_harmonizados} lançamentos sem descrição)"
-            self.dados_produtos.append({"chave": af.DESCRICAO_NAO_HARMONIZADA, "rotulo": rotulo, "grupo": "-", "frequencia": 0})
-        self.dados_produtos.extend({"chave": produto, "rotulo": produto, "grupo": "-", "frequencia": 0} for produto in produtos)
+            self.dados_produtos.append({"chave": af.DESCRICAO_NAO_HARMONIZADA, "rotulo": rotulo, "grupo": "-", "freq_simples": 0.0, "freq_acumulado": 0.0})
+        self.dados_produtos.extend(
+            {"chave": produto, "rotulo": produto, "grupo": "-", "freq_simples": 0.0, "freq_acumulado": 0.0}
+            for produto in produtos
+        )
 
         self.estado_produtos = {item["chave"]: True for item in self.dados_produtos}
         self._ordem_produtos = False
         self._recalcular_classificacoes()
+
+    def _buscar_produtos(self, texto):
+        # Mesma lógica de _buscar_clientes: busca por nome ignora o filtro de
+        # grupo ativo, senão um produto fora do grupo filtrado nunca aparece.
+        if texto.strip() and self.combo_grupo_produtos.get() != "Todos":
+            self.combo_grupo_produtos.set("Todos")
+        self._renderizar_produtos(texto)
 
     def _ordenar_produtos(self):
         decrescente = not getattr(self, "_ordem_produtos", False)
@@ -868,7 +913,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 continue
             marcado = self.estado_produtos.get(item["chave"], True)
             arvore.insert("", "end", iid=item["chave"], tags=("par" if posicao % 2 == 0 else "impar",), values=(
-                "☑" if marcado else "☐", item["rotulo"], item["grupo"], item["frequencia"],
+                "☑" if marcado else "☐", item["rotulo"], item["grupo"],
+                f"{item['freq_simples']:.2f}%", f"{item['freq_acumulado']:.2f}%",
             ))
             posicao += 1
 
@@ -940,6 +986,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
 
             self._recalcular_classificacoes()
+            messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
         else:
             messagebox.showinfo(
                 "Carregar configuração",
@@ -977,6 +1024,25 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._escrever_cortes_grupos(cortes)
         self._registrar_log(f"Cortes sugeridos automaticamente: {cortes} (máx. {max_por_grupo} clientes/grupo).")
         self._recalcular_classificacoes()
+
+        partes_resumo = "\n".join(
+            f"  Grupo {i + 1}: até {corte}% da receita ({contagens[i]} clientes)"
+            for i, corte in enumerate(cortes)
+        )
+        mudou = [round(a, 1) != round(b, 1) for a, b in zip(cortes_iniciais, cortes)]
+        aviso_extra = ""
+        if any(mudou):
+            aviso_extra = (
+                "\n\nOs percentuais foram reduzidos em relação ao que você tinha digitado —"
+                " isso é esperado quando a receita está espalhada entre muitos clientes: para"
+                " caber no máximo definido, o corte de % precisa ficar menor."
+            )
+        messagebox.showinfo(
+            "Sugerir cortes automaticamente",
+            f"Cortes ajustados para respeitar o máximo de {max_por_grupo} clientes por grupo:\n\n"
+            f"{partes_resumo}\n  Demais: {contagens[-1]} clientes"
+            f"{aviso_extra}",
+        )
 
     def _pre_visualizar_grupos(self):
         self._recalcular_classificacoes()
@@ -1019,12 +1085,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         classificacao_produtos = af.classificar_produtos_agregado(self.df, corte_produtos)
         mapa_grupo_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Faixa"]))
-        mapa_freq_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Frequencia"]))
+        mapa_freq_simples_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Freq_Simples"]))
+        mapa_freq_acumulado_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Freq_Acumulado"]))
         for item in self.dados_produtos:
             item["grupo"] = mapa_grupo_produto.get(item["chave"], "-")
-            item["frequencia"] = int(mapa_freq_produto.get(item["chave"], 0))
+            item["freq_simples"] = mapa_freq_simples_produto.get(item["chave"], 0.0)
+            item["freq_acumulado"] = mapa_freq_acumulado_produto.get(item["chave"], 0.0)
 
-        nomes_grupos_clientes = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais", "Excluído"]
+        nomes_grupos_clientes = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais", "Balcão", "Excluído"]
         if hasattr(self, "combo_grupo_clientes"):
             self.combo_grupo_clientes["values"] = ["Todos"] + nomes_grupos_clientes
             # Só troca o filtro sozinho se o usuário ainda não escolheu nada
@@ -1650,9 +1718,36 @@ def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_perso
     workbook.save(caminho_saida)
 
 
+def _pedir_permissao_primeira_execucao():
+    """
+    Na primeira vez que o programa roda nesta pasta (nem 'dados_locais' nem
+    'logs' existem ainda ao lado do executável), pergunta ao usuário se pode
+    criar essas pastas — perfil, configurações salvas e logs de execução.
+    Se recusar, tudo isso vai para uma pasta temporária do Windows nesta
+    sessão em vez de ficar ao lado do executável/script.
+    """
+    if recursos.pasta_dados_locais_ja_existe():
+        return
+    raiz_temporaria = tk.Tk()
+    raiz_temporaria.withdraw()
+    permitido = messagebox.askyesno(
+        f"Primeira execução — {NOME_SISTEMA}",
+        f"Esta é a primeira vez que o {NOME_SISTEMA} roda nesta pasta.\n\n"
+        "Para funcionar, ele precisa criar, ao lado do programa:\n\n"
+        "  •  uma pasta \"dados_locais\" — perfil do usuário e configurações salvas\n"
+        "  •  uma pasta \"logs\" — registro de execução, para diagnóstico\n\n"
+        "Nenhum dado sai desta máquina.\n\n"
+        "Permitir a criação dessas pastas aqui?",
+        icon="question",
+    )
+    raiz_temporaria.destroy()
+    recursos.definir_permissao_dados_locais(permitido)
+
+
 if __name__ == "__main__":
     import splash
 
+    _pedir_permissao_primeira_execucao()
     splash.exibir_splash_e_iniciar(
         etapas_preparacao=construir_etapas_preparacao(),
         funcao_construir_janela_principal=AplicacaoAnaliseFunil,

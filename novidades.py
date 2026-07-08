@@ -21,4 +21,8 @@ NOVIDADES_POR_VERSAO = {
     "1.4.1": [
         "Corrige uma falha ocasional ao reabrir automaticamente logo após uma atualização.",
     ],
+    "1.5.0": [
+        "Remove o relatório 'Venda por Cliente (Top Clientes)', sem uso — virou o gráfico 'Top Clientes por Receita'.",
+        "Corrige a atualização automática: agora ela avisa pra reabrir manualmente em vez de tentar reabrir sozinha (o antivírus bloqueava essa reabertura em alguns computadores).",
+    ],
 }

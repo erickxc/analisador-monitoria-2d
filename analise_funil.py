@@ -186,17 +186,6 @@ def top_produtos(df, n=20):
     return resultado
 
 
-def top_clientes(df, n=20):
-    resultado = (
-        df.groupby("Cliente", as_index=False)
-        .agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
-        .sort_values("Receita", ascending=False)
-        .head(n)
-        .reset_index(drop=True)
-    )
-    return resultado
-
-
 def top_fabricantes(df, n=20):
     resultado = (
         df.groupby("NOME_FABRICANTE", as_index=False)
@@ -1239,7 +1228,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     Roda as análises solicitadas para cada granularidade escolhida.
 
     chaves_solicitadas: conjunto/lista de chaves do catálogo a calcular (ex.:
-    {"top_clientes", "migracao_abc"}). Se None, calcula tudo. Análises caras
+    {"top_produtos", "migracao_abc"}). Se None, calcula tudo. Análises caras
     (como migração entre faixas, que precisa da segmentação ABC) só rodam se
     pedidas — ou se outra análise pedida depender delas — evitando gastar
     tempo em algo que não vai para o relatório final. Com bases grandes
@@ -1248,8 +1237,8 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     excluir_periodo_atual: por padrão, o período mais recente de cada
     granularidade é descartado antes de rodar qualquer análise "por
     período" (o mês/trimestre/etc. corrente costuma estar incompleto na
-    base). Não afeta top_produtos/top_clientes/top_fabricantes, que somam a
-    base inteira e não fatiam por período.
+    base). Não afeta top_produtos/top_fabricantes, que somam a base inteira
+    e não fatiam por período.
 
     top_n_produtos: limite de produtos em evolucao_produtos/alertas_queda
     (None = todos — ver tendencia_produtos). reducao_minima_erosao: % mínimo
@@ -1267,7 +1256,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             callback_log(mensagem)
 
     todas_as_chaves = {
-        "top_produtos", "top_clientes", "top_fabricantes", "poder_compra_clientes",
+        "top_produtos", "top_fabricantes", "poder_compra_clientes",
         "evolucao_produtos", "alertas_queda", "erosao_clientes", "abc", "abc_produtos",
         "migracao_abc", "migracao_resumo", "migracao_score_clientes",
         "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
@@ -1378,8 +1367,6 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
 
         if precisa("top_produtos"):
             analises["top_produtos"] = top_produtos(df)
-        if precisa("top_clientes"):
-            analises["top_clientes"] = top_clientes(df)
         if precisa("top_fabricantes"):
             analises["top_fabricantes"] = top_fabricantes(df)
 

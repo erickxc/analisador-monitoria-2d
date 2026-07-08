@@ -6,7 +6,7 @@ Documento de referência do estado atual de cada relatório/análise. Gerado len
 
 - **Entrada:** um único CSV (`;`, `utf-8-sig`) carregado por `carregar_csv()` em `analise_funil.py`. Linhas com `Ano` ou `Mês` vazio são descartadas (contadas e avisadas ao usuário, não travam a importação).
 - **Granularidade:** todo relatório baseado em período pode ser calculado em Mensal, Trimestral, Semestral ou Anual — é um parâmetro (`granularidade`) que quase toda função aceita, mudando qual coluna de período (`Periodo_Mensal`, `Periodo_Trimestral`, etc.) é usada para agrupar.
-- **Período mais recente excluído por padrão:** `gerar_analises_completas(..., excluir_periodo_atual=True)` — o último período de cada granularidade (geralmente incompleto na base) é descartado antes de qualquer análise "por período". Não afeta `top_produtos`/`top_clientes`/`top_fabricantes` (somam a base inteira). Checkbox "Incluir período mais recente" na tela pra desligar isso.
+- **Período mais recente excluído por padrão:** `gerar_analises_completas(..., excluir_periodo_atual=True)` — o último período de cada granularidade (geralmente incompleto na base) é descartado antes de qualquer análise "por período". Não afeta `top_produtos`/`top_fabricantes` (somam a base inteira). Checkbox "Incluir período mais recente" na tela pra desligar isso.
 - **Orquestração:** `gerar_analises_completas()` é o ponto único que roda tudo. Recebe `chaves_solicitadas` (quais relatórios o usuário marcou no catálogo) e resolve as dependências entre eles automaticamente — por exemplo, "Migração de Grupo" precisa da classificação ABC **completa** (sem o corte de top-5 usado na exibição do relatório "ABC"), então ele recalcula isso internamente mesmo que "ABC" não esteja marcado, mas só se algo pedido de fato precisar. Isso existe por performance: com centenas de milhares de linhas, calcular tudo sempre seria lento à toa.
 - **Saída:** um dicionário `{ granularidade: { chave_do_relatorio: DataFrame } }`, que os três exportadores (Excel/PDF/Word) percorrem pra gerar uma aba/seção por combinação de relatório × granularidade.
 
@@ -18,11 +18,12 @@ O que aparece marcável na interface, em `CATALOGO_RELATORIOS` (`app.py`):
 
 | Chave | Rótulo | Função | O que é |
 |---|---|---|---|
-| `top_clientes` | Venda por Cliente (Top Clientes) | `top_produtos`/`top_clientes`/`top_fabricantes` | Top 20 por Receita (soma de todo o período carregado, **não** respeita granularidade) |
-| `top_fabricantes` | Venda por Fabricante (Top Fabricantes) | idem | idem, agrupado por `NOME_FABRICANTE` |
+| `top_fabricantes` | Venda por Fabricante (Top Fabricantes) | `top_produtos`/`top_fabricantes` | Top 20 por Receita (soma de todo o período carregado, **não** respeita granularidade) |
 | `top_produtos` | Venda por Produto (Top Produtos) | idem | idem, agrupado por `descricao` |
 
-Essas três são as únicas do catálogo que **não variam por granularidade** — somam a base inteira, sempre.
+Essas duas são as únicas do catálogo que **não variam por granularidade** — somam a base inteira, sempre.
+
+> `top_clientes` ("Venda por Cliente / Top Clientes") foi removido do catálogo por falta de uso — virou o gráfico "Top Clientes por Receita" (ver seção Gráficos abaixo).
 
 ### Segmentação e Poder de Compra
 
@@ -73,12 +74,13 @@ Tabela dinâmica livre (`pandas.pivot_table`, com `margins=True` = linha/coluna 
 
 ## Gráficos (`graficos.py`)
 
-Quatro visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` do cliente (última classificação disponível), exceto onde indicado:
+Cinco visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` do cliente (última classificação disponível), exceto onde indicado:
 
 1. **Vendas por Fabricante** — QTD × Receita, um ponto por (fabricante, cliente).
 2. **Vendas por Produto** — QTD × Receita por (produto, cliente); pode colorir por Faixa ABC **ou** por Fabricante.
 3. **Receita Agrupada** — receita total por Fabricante ou por Produto, ordenado decrescente (sem cor por faixa).
 4. **Afinidade Cliente × Fabricante** — % do faturamento do cliente que vem daquele fabricante (eixo X) × frequência de compra (eixo Y).
+5. **Top Clientes por Receita** — receita total dos N clientes de maior faturamento (10/20/50/100, ajustável), ordenado decrescente, sem cor por faixa. Substitui o relatório `top_clientes` removido do catálogo.
 
 Exportação: só PNG, um gráfico por vez (a view atualmente selecionada).
 

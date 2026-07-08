@@ -113,6 +113,25 @@ def desenhar_receita_agrupada(ax, df, agrupar_por="NOME_FABRICANTE"):
     ax.set_title(f"Receita por {agrupar_por}")
 
 
+def desenhar_top_clientes(ax, df, top_n=20):
+    """
+    View: os top_n clientes de maior receita (soma de todo o período
+    carregado, sem cor por faixa) — substitui o antigo relatório "Venda por
+    Cliente (Top Clientes)", removido do catálogo por falta de uso; como
+    gráfico, dá pra ver de cara o degrau entre os maiores clientes.
+    """
+    ax.clear()
+    agrupado = df.groupby("Cliente", as_index=False).agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
+    agrupado.sort_values("Receita", ascending=False, inplace=True)
+    agrupado = agrupado.head(top_n)
+
+    ax.scatter(range(len(agrupado)), agrupado["Receita"], c="#1565c0", alpha=0.7)
+    ax.set_xticks(range(len(agrupado)))
+    ax.set_xticklabels(agrupado["Cliente"], rotation=90, fontsize=6)
+    ax.set_ylabel("Receita (R$)")
+    ax.set_title(f"Top {top_n} Clientes por Receita")
+
+
 def desenhar_afinidade_cliente_fabricante(ax, df, abc_df):
     """
     View 4: por cliente, participação % de cada fabricante no faturamento do
@@ -156,6 +175,7 @@ class PainelGraficosFrame(ttk.Frame):
         "Vendas por Produto",
         "Receita por Fabricante ou Produto",
         "Afinidade Cliente-Fabricante",
+        "Top Clientes por Receita",
     ]
 
     def __init__(self, master, obter_dataframe, obter_abc_df):
@@ -175,7 +195,8 @@ class PainelGraficosFrame(ttk.Frame):
         self.combo_view.pack(side="left", padx=4)
         self.combo_view.bind("<<ComboboxSelected>>", lambda evento: self._atualizar_opcoes())
 
-        ttk.Label(controles, text="Colorir/Agrupar por:").pack(side="left", padx=(12, 0))
+        self.label_opcao = ttk.Label(controles, text="Colorir/Agrupar por:")
+        self.label_opcao.pack(side="left", padx=(12, 0))
         self.combo_opcao = ttk.Combobox(controles, values=["Faixa_ABC", "Fabricante"], state="readonly", width=15)
         self.combo_opcao.current(0)
         self.combo_opcao.pack(side="left", padx=4)
@@ -194,12 +215,17 @@ class PainelGraficosFrame(ttk.Frame):
 
     def _atualizar_opcoes(self):
         view = self.combo_view.get()
+        self.label_opcao.config(text="Colorir/Agrupar por:")
         if view == "Vendas por Produto":
             self.combo_opcao["values"] = ["Faixa_ABC", "Fabricante"]
             self.combo_opcao.current(0)
         elif view == "Receita por Fabricante ou Produto":
             self.combo_opcao["values"] = ["Fabricante", "Produto"]
             self.combo_opcao.current(0)
+        elif view == "Top Clientes por Receita":
+            self.label_opcao.config(text="Quantidade de clientes:")
+            self.combo_opcao["values"] = ["10", "20", "50", "100"]
+            self.combo_opcao.current(1)
         else:
             self.combo_opcao["values"] = []
             self.combo_opcao.set("")
@@ -223,6 +249,8 @@ class PainelGraficosFrame(ttk.Frame):
                 desenhar_receita_agrupada(self.eixo, df, agrupar_por=opcao or "Fabricante")
             elif view == "Afinidade Cliente-Fabricante":
                 desenhar_afinidade_cliente_fabricante(self.eixo, df, abc_df)
+            elif view == "Top Clientes por Receita":
+                desenhar_top_clientes(self.eixo, df, top_n=int(opcao) if opcao else 20)
         except Exception as exc:
             messagebox.showerror("Erro ao gerar gráfico", str(exc))
             return

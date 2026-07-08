@@ -22,10 +22,17 @@ def _conexao():
         CREATE TABLE IF NOT EXISTS perfil (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             nome TEXT NOT NULL DEFAULT '',
-            tamanho_fonte INTEGER NOT NULL DEFAULT %d
+            tamanho_fonte INTEGER NOT NULL DEFAULT %d,
+            ultima_versao_vista TEXT
         )
         """ % TAMANHO_FONTE_PADRAO
     )
+    # Migração pra quem já tinha o banco antes desta coluna existir —
+    # CREATE TABLE IF NOT EXISTS não adiciona coluna em tabela já criada.
+    try:
+        conexao.execute("ALTER TABLE perfil ADD COLUMN ultima_versao_vista TEXT")
+    except sqlite3.OperationalError:
+        pass  # coluna já existe
     conexao.commit()
     return conexao
 
@@ -48,5 +55,24 @@ def salvar_perfil(nome, tamanho_fonte):
             ON CONFLICT(id) DO UPDATE SET nome = excluded.nome, tamanho_fonte = excluded.tamanho_fonte
             """,
             (nome, tamanho_fonte),
+        )
+        conexao.commit()
+
+
+def obter_ultima_versao_vista():
+    """Última versão para a qual a tela de novidades já foi exibida nesta instalação, ou None."""
+    with _conexao() as conexao:
+        linha = conexao.execute("SELECT ultima_versao_vista FROM perfil WHERE id = 1").fetchone()
+    return linha[0] if linha and linha[0] else None
+
+
+def definir_ultima_versao_vista(versao):
+    with _conexao() as conexao:
+        conexao.execute(
+            """
+            INSERT INTO perfil (id, ultima_versao_vista) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET ultima_versao_vista = excluded.ultima_versao_vista
+            """,
+            (versao,),
         )
         conexao.commit()

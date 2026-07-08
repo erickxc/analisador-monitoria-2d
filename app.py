@@ -146,7 +146,6 @@ COR_ACCENT = f"#{COR_CABECALHO}"  # mesma cor de destaque usada nos cabeçalhos 
 # para as chaves internas já calculadas por analise_funil.gerar_analises_completas.
 CATALOGO_RELATORIOS = [
     ("Vendas", [
-        ("top_clientes", "Venda por Cliente (Top Clientes)"),
         ("top_fabricantes", "Venda por Fabricante (Top Fabricantes)"),
         ("top_produtos", "Venda por Produto (Top Produtos)"),
     ]),
@@ -1743,7 +1742,6 @@ def _criar_capa(workbook, resultados_analise, nome_usuario="", nome_empresa=""):
 
 NOMES_ANALISE = {
     "top_produtos": "Top_Produtos",
-    "top_clientes": "Top_Clientes",
     "top_fabricantes": "Top_Fabricantes",
     "poder_compra_clientes": "Poder_Compra_Clientes",
     "evolucao_produtos": "Evolucao_Produtos",
@@ -1763,7 +1761,6 @@ NOMES_ANALISE = {
 
 COLUNAS_MOEDA_POR_ANALISE = {
     "top_produtos": ["Receita"],
-    "top_clientes": ["Receita"],
     "top_fabricantes": ["Receita"],
     "poder_compra_clientes": ["Poder_De_Compra"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],

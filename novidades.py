@@ -18,4 +18,7 @@ NOVIDADES_POR_VERSAO = {
         "Poder de Compra: recalculado com base nos 3 melhores meses de cada cliente, não mais por período.",
         "Migração de Grupo: causas mais diretas, resumo de altas x quedas, e placar de pontuação por cliente.",
     ],
+    "1.4.1": [
+        "Corrige uma falha ocasional ao reabrir automaticamente logo após uma atualização.",
+    ],
 }

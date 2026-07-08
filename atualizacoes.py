@@ -104,6 +104,12 @@ def aplicar_atualizacao_e_reiniciar(caminho_novo_exe):
     ainda está em uso enquanto este processo não terminar — e então reabre
     o programa. Só faz sentido rodando como .exe (frozen): em modo
     desenvolvimento não há um único arquivo pra substituir.
+
+    Depois do move bem-sucedido, espera mais um instante antes de reabrir:
+    sem essa folga, o antivírus (proteção em tempo real do Windows Defender,
+    por exemplo) pode ainda estar varrendo o executável recém-escrito
+    (não assinado) no exato momento do `start`, e o bootloader do
+    PyInstaller falha com "Failed to load Python DLL" — visto na prática.
     """
     if not getattr(sys, "frozen", False):
         raise RuntimeError("Instalação automática só é possível na versão empacotada (.exe), não em modo desenvolvimento.")
@@ -120,7 +126,10 @@ move /y "{caminho_novo_exe}" "{caminho_atual}" >nul 2>&1
 if exist "{caminho_novo_exe}" (
     if %tentativas% lss 20 goto esperar
 )
-if not exist "{caminho_novo_exe}" start "" "{caminho_atual}"
+if not exist "{caminho_novo_exe}" (
+    ping -n 4 127.0.0.1 >nul
+    start "" "{caminho_atual}"
+)
 del "%~f0"
 """
     with open(caminho_bat, "w", encoding="utf-8") as arquivo:

@@ -208,23 +208,42 @@ def top_fabricantes(df, n=20):
     return resultado
 
 
-def poder_compra_clientes(abc_clientes_df):
+def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False):
     """
-    Recorte do "Poder de Compra por Cliente": para cada cliente/período, a
-    receita, a faixa de representatividade e a renúncia (poder de compra
-    abandonado) — já calculados em classificar_abc. Só reorganiza/renomeia
-    colunas para leitura direta em um relatório.
+    Poder de compra "de pico" de cada cliente: média dos 3 meses-calendário
+    de MAIOR receita (não a média corrida, nem o total agregado) — reflete a
+    capacidade de compra do cliente no seu melhor momento, não o
+    comportamento típico do dia a dia. Sempre por Periodo_Mensal, independente
+    da granularidade escolhida na tela (um "pico" é um conceito mensal).
 
-    NOTA: esta é a versão "por período", mantida por compatibilidade — o
-    relatório "Poder de Compra por Cliente" do catálogo será substituído por
-    uma versão agregada (poder_compra_agregado, baseada nos 3 maiores meses
-    de receita do cliente, sem período) numa etapa seguinte.
+    Grupo e Percentual_Acumulado vêm de classificar_clientes_agregado — ou
+    seja, do tamanho do cliente pela receita TOTAL, não pelo poder de compra.
+    Decisão deliberada: a segmentação em grupos continua refletindo o
+    cliente como um todo; poder de compra é uma métrica complementar, não
+    substitui a segmentação por receita.
+
+    Retorna (sem período, uma linha por cliente): Cliente, Poder_De_Compra,
+    Percentual_Acumulado, Grupo.
     """
-    if abc_clientes_df.empty:
-        return abc_clientes_df.copy()
-    colunas = ["Cliente", "Periodo", "Receita", "Percentual_Acumulado", "Faixa_ABC",
-               "Renuncia", "Renuncia_Acumulada", "Renuncia_Percentual"]
-    return abc_clientes_df[colunas].rename(columns={"Faixa_ABC": "Faixa_Representatividade"})
+    excluidos = set(clientes_excluidos or [])
+    base = df[~df["Cliente"].isin(excluidos)] if excluidos else df
+
+    receita_mensal = base.groupby(["Cliente", "Periodo_Mensal"], as_index=False)["Receita"].sum()
+    top3_por_cliente = (
+        receita_mensal.sort_values("Receita", ascending=False)
+        .groupby("Cliente")["Receita"].apply(lambda serie: serie.head(3).mean())
+        .rename("Poder_De_Compra")
+    )
+
+    classificacao = classificar_clientes_agregado(df, clientes_excluidos, cortes, desconsiderar_balcao)
+    resultado = classificacao[["Cliente", "Percentual_Acumulado", "Faixa"]].rename(columns={"Faixa": "Grupo"})
+    resultado = resultado.merge(top3_por_cliente, on="Cliente", how="left")
+    resultado["Poder_De_Compra"] = resultado["Poder_De_Compra"].fillna(0.0)
+
+    resultado = resultado[["Cliente", "Poder_De_Compra", "Percentual_Acumulado", "Grupo"]]
+    resultado.sort_values("Poder_De_Compra", ascending=False, inplace=True)
+    resultado.reset_index(drop=True, inplace=True)
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -781,6 +800,20 @@ def classificar_faixas(df, granularidade="Mensal", campo="Cliente", excluidos=No
     return classificado
 
 
+def _limitar_top_por_grupo(classificado, top_por_grupo):
+    """Mantém só as `top_por_grupo` linhas de maior Receita em cada (Periodo, Faixa_ABC). None = sem corte."""
+    if top_por_grupo is None or classificado.empty:
+        return classificado
+    limitado = (
+        classificado.sort_values("Receita", ascending=False)
+        .groupby(["Periodo", "Faixa_ABC"], group_keys=False)
+        .head(top_por_grupo)
+    )
+    limitado.sort_values(["Periodo", "Faixa_ABC", "Receita"], ascending=[True, True, False], inplace=True)
+    limitado.reset_index(drop=True, inplace=True)
+    return limitado
+
+
 def classificar_abc(df, granularidade="Mensal", clientes_excluidos=None, cortes_clientes=(30.0, 50.0, 60.0),
                      desconsiderar_balcao=False, top_clientes_por_grupo=5):
     """
@@ -788,7 +821,10 @@ def classificar_abc(df, granularidade="Mensal", clientes_excluidos=None, cortes_
     classificar_faixas) — recorte "executivo" pro relatório final:
 
       - mantém só os `top_clientes_por_grupo` clientes de maior receita em
-        cada (Período, Faixa) — None mantém todos, sem corte;
+        cada (Período, Faixa) — None mantém todos, sem corte. IMPORTANTE:
+        quem depende da classificação COMPLETA (migração de faixa, poder de
+        compra) deve chamar com top_clientes_por_grupo=None — um corte de
+        top 5 aqui faria a migração só enxergar 5 clientes por grupo.
       - descarta Frequencia_Simples/Frequencia_Acumulada: não fazem sentido
         junto de um corte "top N por grupo" (a frequência de compra do
         cliente não muda por causa do corte, e a coluna ao lado de "top 5"
@@ -799,17 +835,7 @@ def classificar_abc(df, granularidade="Mensal", clientes_excluidos=None, cortes_
         cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
     )
     classificado = classificado.drop(columns=["Frequencia_Simples", "Frequencia_Acumulada"])
-
-    if top_clientes_por_grupo is not None and not classificado.empty:
-        classificado = (
-            classificado.sort_values("Receita", ascending=False)
-            .groupby(["Periodo", "Faixa_ABC"], group_keys=False)
-            .head(top_clientes_por_grupo)
-        )
-        classificado.sort_values(["Periodo", "Faixa_ABC", "Receita"], ascending=[True, True, False], inplace=True)
-        classificado.reset_index(drop=True, inplace=True)
-
-    return classificado
+    return _limitar_top_por_grupo(classificado, top_clientes_por_grupo)
 
 
 def classificar_produtos_por_receita(df, granularidade="Mensal", corte_percentual=80.0):
@@ -1045,6 +1071,81 @@ def migracao_abc(df, abc_df, granularidade="Mensal"):
     return pd.DataFrame(migracoes)
 
 
+def resumo_migracao(migracao_df):
+    """
+    Uma linha por transição de período, com a contagem de clientes que
+    subiram vs. desceram de faixa nela — visão executiva rápida (ver
+    migracao_abc para o detalhe por cliente).
+    """
+    colunas = ["Periodo_Anterior", "Periodo_Atual", "Qtd_Subiu", "Qtd_Desceu"]
+    if migracao_df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    resumo = (
+        migracao_df.groupby(["Periodo_Anterior", "Periodo_Atual", "Direcao"])
+        .size().unstack(fill_value=0).reset_index()
+    )
+    for direcao in ("Subiu", "Desceu"):
+        if direcao not in resumo.columns:
+            resumo[direcao] = 0
+    resumo.rename(columns={"Subiu": "Qtd_Subiu", "Desceu": "Qtd_Desceu"}, inplace=True)
+    return resumo[colunas]
+
+
+PONTOS_SUBIU_FAIXA = 3
+PONTOS_DESCEU_FAIXA = -2
+
+
+def pontuacao_migracao_clientes(migracao_df, abc_df):
+    """
+    Score de migração por cliente, acumulado ao longo de TODO o histórico de
+    transições disponível (não só a mais recente): +3 por subida de faixa,
+    -2 por queda. Clientes que só sobem acumulam pontos rápido; quem cai com
+    frequência tende a score negativo.
+
+    Percentual_Permanencia: das transições de período em que o cliente
+    aparece nos dois lados (a mesma base contada por migracao_abc), qual %
+    ele NÃO migrou de faixa. 100% = nunca mudou de faixa desde que aparece
+    na base.
+    """
+    colunas = ["Cliente", "Qtd_Subiu", "Qtd_Desceu", "Score", "Percentual_Permanencia"]
+    if abc_df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    if migracao_df.empty:
+        contagem_migracoes = pd.DataFrame(columns=["Subiu", "Desceu"])
+    else:
+        contagem_migracoes = migracao_df.groupby(["Cliente", "Direcao"]).size().unstack(fill_value=0)
+    for direcao in ("Subiu", "Desceu"):
+        if direcao not in contagem_migracoes.columns:
+            contagem_migracoes[direcao] = 0
+
+    # "Oportunidades de migrar" por cliente = nº de transições em que ele
+    # aparece nos dois períodos (mesma base usada por migracao_abc: períodos
+    # do cliente - 1, nunca negativo).
+    transicoes_por_cliente = (abc_df.groupby("Cliente")["Periodo"].nunique() - 1).clip(lower=0)
+
+    resultado = transicoes_por_cliente.rename("Transicoes").reset_index()
+    resultado = resultado.merge(
+        contagem_migracoes[["Subiu", "Desceu"]].reset_index(), on="Cliente", how="left"
+    )
+    resultado[["Subiu", "Desceu"]] = resultado[["Subiu", "Desceu"]].fillna(0).astype(int)
+    resultado["Score"] = resultado["Subiu"] * PONTOS_SUBIU_FAIXA + resultado["Desceu"] * PONTOS_DESCEU_FAIXA
+
+    migracoes_totais = resultado["Subiu"] + resultado["Desceu"]
+    resultado["Percentual_Permanencia"] = np.where(
+        resultado["Transicoes"] > 0,
+        (resultado["Transicoes"] - migracoes_totais) / resultado["Transicoes"] * 100,
+        100.0,
+    )
+
+    resultado.rename(columns={"Subiu": "Qtd_Subiu", "Desceu": "Qtd_Desceu"}, inplace=True)
+    resultado = resultado[colunas]
+    resultado.sort_values("Score", ascending=False, inplace=True)
+    resultado.reset_index(drop=True, inplace=True)
+    return resultado
+
+
 def _preparar_contexto_causa_provavel(df, col_periodo):
     """
     Pré-calcula, uma única vez para todo o DataFrame, os agregados por
@@ -1066,11 +1167,14 @@ def _preparar_contexto_causa_provavel(df, col_periodo):
 
 def _causa_provavel_migracao(contexto, cliente, periodo_anterior, periodo_atual, direcao):
     """
-    Heurísticas simples e transparentes para explicar a migração de faixa,
-    usando os agregados pré-calculados em `contexto` (ver
-    _preparar_contexto_causa_provavel) em vez de refiltrar o DataFrame.
-    Sempre prefixa a explicação deixando claro que é uma estimativa, não uma
-    certeza.
+    Heurísticas para explicar a migração de faixa, usando os agregados
+    pré-calculados em `contexto` (ver _preparar_contexto_causa_provavel) em
+    vez de refiltrar o DataFrame. Critérios propositalmente rígidos: só
+    retorna uma causa quando uma regra bate com folga (limiares bem acima do
+    "só um pouco mais que zero"); caso contrário retorna string vazia — não
+    força um "Caso Específico"/genérico só para preencher a célula. Sem
+    linguagem de "estimativa": o que aparece aqui é apresentado como fato,
+    não como palpite hedgeado.
     """
     chave_anterior = (cliente, periodo_anterior)
     chave_atual = (cliente, periodo_atual)
@@ -1078,12 +1182,10 @@ def _causa_provavel_migracao(contexto, cliente, periodo_anterior, periodo_atual,
     receita_anterior = contexto["receita"].get(chave_anterior, 0.0)
     receita_atual = contexto["receita"].get(chave_atual, 0.0)
 
-    prefixo = "Provável causa (heurística, não é certeza): "
-
     if receita_atual == 0:
-        return prefixo + "cliente parou de comprar no período atual."
+        return "Cliente parou de comprar no período atual."
 
-    # Heurística 1: queda concentrada em um produto específico abandonado
+    # Produto abandonado respondia por boa parte da receita (>=70%, não 40%)
     produtos_anterior = contexto["produtos"].get(chave_anterior, set())
     produtos_atual = contexto["produtos"].get(chave_atual, set())
     produtos_abandonados = produtos_anterior - produtos_atual
@@ -1092,32 +1194,36 @@ def _causa_provavel_migracao(contexto, cliente, periodo_anterior, periodo_atual,
             contexto["receita_produto"].get((cliente, periodo_anterior, produto), 0.0)
             for produto in produtos_abandonados
         )
-        if receita_anterior > 0 and receita_produtos_abandonados / receita_anterior >= 0.4:
+        if receita_anterior > 0 and receita_produtos_abandonados / receita_anterior >= 0.7:
             principal = ", ".join(list(produtos_abandonados)[:3])
-            return prefixo + f"deixou de comprar produto(s) que respondiam por parte relevante da receita ({principal})."
+            return f"Deixou de comprar produto(s) que respondiam por {receita_produtos_abandonados / receita_anterior * 100:.0f}% da receita anterior ({principal})."
 
-    # Heurística 2: redução de frequência de compra (menos meses/períodos com compra)
+    # Frequência de compra caiu pela metade ou mais (não só "caiu um pouco")
     meses_anterior = contexto["meses"].get(chave_anterior, 0)
     meses_atual = contexto["meses"].get(chave_atual, 0)
-    if direcao == "Desceu" and meses_atual < meses_anterior:
-        return prefixo + f"redução na frequência de compra ({meses_anterior} período(s) com compra antes, {meses_atual} depois)."
+    if direcao == "Desceu" and meses_anterior > 0 and (meses_anterior - meses_atual) / meses_anterior >= 0.5:
+        return f"Redução de pelo menos metade na frequência de compra ({meses_anterior} período(s) com compra antes, {meses_atual} depois)."
 
-    # Heurística 3: redução de ticket médio mantendo os mesmos produtos
+    # Ticket médio caiu 40%+ mantendo os mesmos produtos (não só 20%)
     qtd_anterior = contexto["qtd"].get(chave_anterior, 0)
     qtd_atual = contexto["qtd"].get(chave_atual, 0)
     ticket_anterior = receita_anterior / qtd_anterior if qtd_anterior else 0
     ticket_atual = receita_atual / qtd_atual if qtd_atual else 0
-    if direcao == "Desceu" and ticket_anterior > 0 and ticket_atual < ticket_anterior * 0.8:
-        return prefixo + "redução do ticket médio mantendo os mesmos produtos."
+    if direcao == "Desceu" and ticket_anterior > 0 and ticket_atual <= ticket_anterior * 0.6:
+        return f"Redução de {(1 - ticket_atual / ticket_anterior) * 100:.0f}% no ticket médio mantendo os mesmos produtos."
 
     if direcao == "Subiu":
         produtos_novos = produtos_atual - produtos_anterior
         if produtos_novos:
-            principal = ", ".join(list(produtos_novos)[:3])
-            return prefixo + f"aumento de receita associado a novo(s) produto(s) comprado(s) ({principal})."
-        return prefixo + "aumento geral de receita no período, sem produto específico identificado."
+            receita_produtos_novos = sum(
+                contexto["receita_produto"].get((cliente, periodo_atual, produto), 0.0)
+                for produto in produtos_novos
+            )
+            if receita_atual > 0 and receita_produtos_novos / receita_atual >= 0.5:
+                principal = ", ".join(list(produtos_novos)[:3])
+                return f"Novo(s) produto(s) já respondem por {receita_produtos_novos / receita_atual * 100:.0f}% da receita atual ({principal})."
 
-    return prefixo + "variação de receita sem padrão específico identificado pelas heurísticas atuais."
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -1163,7 +1269,8 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     todas_as_chaves = {
         "top_produtos", "top_clientes", "top_fabricantes", "poder_compra_clientes",
         "evolucao_produtos", "alertas_queda", "erosao_clientes", "abc", "abc_produtos",
-        "migracao_abc", "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
+        "migracao_abc", "migracao_resumo", "migracao_score_clientes",
+        "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
         "correlacao_produto_cliente", "impacto_financeiro_churn",
     }
     pedidas = todas_as_chaves if chaves_solicitadas is None else set(chaves_solicitadas)
@@ -1171,13 +1278,15 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     def precisa(*chaves):
         return any(chave in pedidas for chave in chaves)
 
-    # Resolve dependências entre análises (ex.: migração e poder de compra
-    # dependem da segmentação ABC; correlação e impacto de churn dependem da
-    # erosão de clientes) para nunca pular um cálculo que outro item pedido
-    # ainda precisa, mas também nunca calcular o que ninguém pediu.
+    # Resolve dependências entre análises (ex.: migração depende da
+    # segmentação ABC completa, não do recorte top-5 exibido no relatório;
+    # correlação e impacto de churn dependem da erosão de clientes) para
+    # nunca pular um cálculo que outro item pedido ainda precisa, mas também
+    # nunca calcular o que ninguém pediu.
     precisa_tendencia = precisa("evolucao_produtos", "alertas_queda", "erosao_clientes", "correlacao_produto_cliente")
     precisa_erosao = precisa("erosao_clientes", "correlacao_produto_cliente", "impacto_financeiro_churn")
-    precisa_abc = precisa("abc", "poder_compra_clientes", "migracao_abc")
+    precisa_migracao = precisa("migracao_abc", "migracao_resumo", "migracao_score_clientes")
+    precisa_abc = precisa("abc") or precisa_migracao
 
     resultados = {}
     for granularidade in granularidades:
@@ -1216,19 +1325,36 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
         abc = None
         if precisa_abc:
             logar(f"[{granularidade}] Classificando clientes por faixa de faturamento...")
-            abc = classificar_abc(df_periodo, granularidade, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao)
+            # Sempre sem corte aqui (top_clientes_por_grupo=None): migração
+            # precisa ver TODOS os clientes pra detectar corretamente quem
+            # mudou de faixa. O corte "top 5" é aplicado só na hora de expor
+            # a chave "abc" do relatório, não na classificação em si.
+            abc = classificar_abc(
+                df_periodo, granularidade, clientes_excluidos, cortes_clientes,
+                desconsiderar_balcao=desconsiderar_balcao, top_clientes_por_grupo=None,
+            )
             if precisa("abc"):
-                analises["abc"] = abc
-            if precisa("poder_compra_clientes"):
-                analises["poder_compra_clientes"] = poder_compra_clientes(abc)
+                analises["abc"] = _limitar_top_por_grupo(abc, 5)
+
+        if precisa("poder_compra_clientes"):
+            logar(f"[{granularidade}] Calculando poder de compra agregado dos clientes...")
+            analises["poder_compra_clientes"] = poder_compra_agregado(
+                df_periodo, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
+            )
 
         if precisa("abc_produtos"):
             logar(f"[{granularidade}] Classificando produtos por faixa de faturamento...")
             analises["abc_produtos"] = classificar_produtos_por_receita(df_periodo, granularidade, corte_produtos)
 
-        if precisa("migracao_abc"):
+        if precisa_migracao:
             logar(f"[{granularidade}] Calculando migração de clientes entre faixas...")
-            analises["migracao_abc"] = migracao_abc(df_periodo, abc, granularidade)
+            migracao = migracao_abc(df_periodo, abc, granularidade)
+            if precisa("migracao_abc"):
+                analises["migracao_abc"] = migracao
+                # Resumo e score não têm checkbox próprio no catálogo — são
+                # subprodutos automáticos sempre que "migracao_abc" é pedido.
+                analises["migracao_resumo"] = resumo_migracao(migracao)
+                analises["migracao_score_clientes"] = pontuacao_migracao_clientes(migracao, abc)
 
         if precisa("produtos_em_alta", "produtos_em_queda"):
             logar(f"[{granularidade}] Montando boletim de produtos em alta/queda...")

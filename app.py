@@ -30,6 +30,7 @@ from recursos import (
 )
 import perfil
 import atualizacoes
+from novidades import NOVIDADES_POR_VERSAO
 
 try:
     from tkinterdnd2 import TkinterDnD
@@ -221,6 +222,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar_janela)
 
+        self._mostrar_novidades_versao()
         threading.Thread(target=self._verificar_atualizacoes, daemon=True).start()
 
     def report_callback_exception(self, exc, val, tb):
@@ -347,6 +349,47 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             "Análise de funil de vendas B2B: tendências de produtos, erosão de\n"
             "clientes, segmentação por faturamento e relatórios personalizados.",
         )
+
+    def _mostrar_novidades_versao(self):
+        """
+        Janela pequena e direta com o que mudou nesta versão — só aparece na
+        primeira vez que o usuário abre uma versão diferente da última
+        registrada (nunca na primeira execução de uma instalação nova: não
+        há versão anterior pra comparar, então só registra e sai em silêncio).
+        """
+        ultima_vista = perfil.obter_ultima_versao_vista()
+        if ultima_vista == VERSAO_ATUAL:
+            return
+        perfil.definir_ultima_versao_vista(VERSAO_ATUAL)
+        if ultima_vista is None:
+            return
+
+        itens = NOVIDADES_POR_VERSAO.get(VERSAO_ATUAL)
+        if not itens:
+            return
+
+        janela = tk.Toplevel(self)
+        janela.title(f"Novidades da versão {VERSAO_ATUAL}")
+        janela.geometry("440x360")
+        janela.resizable(False, False)
+        janela.transient(self)
+        janela.grab_set()
+
+        ttk.Label(
+            janela, text=f"O que mudou na v{VERSAO_ATUAL}", font=("Segoe UI", 13, "bold"),
+        ).pack(anchor="w", padx=18, pady=(18, 2))
+        ttk.Label(
+            janela, text=f"(versão anterior: {ultima_vista})", foreground="gray",
+        ).pack(anchor="w", padx=18, pady=(0, 10))
+
+        texto = tk.Text(janela, wrap="word", borderwidth=0, font=("Segoe UI", 9), padx=2)
+        texto.pack(fill="both", expand=True, padx=18, pady=(0, 8))
+        for item in itens:
+            texto.insert("end", f"•  {item}\n\n")
+        texto.config(state="disabled")
+
+        ttk.Button(janela, text="Entendi", command=janela.destroy).pack(pady=(0, 16))
+        janela.bind("<Return>", lambda evento: janela.destroy())
 
     def _montar_interface(self):
         self._montar_menu()

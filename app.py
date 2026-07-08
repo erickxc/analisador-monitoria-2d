@@ -617,7 +617,41 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             foreground="gray", font=("Segoe UI", 8), justify="left",
         ).grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
 
-        # --- Bloco 2: Alertas e granularidade ------------------------------
+        # --- Bloco 2: Evolução, alertas e erosão ---------------------------
+        bloco_evolucao = ttk.LabelFrame(frame, text="Evolução, alertas e erosão")
+        bloco_evolucao.pack(fill="x", padx=6, pady=(0, 6))
+
+        self.check_incluir_periodo_atual = ttk.Checkbutton(
+            bloco_evolucao, text="Incluir período mais recente (geralmente incompleto)",
+            command=self._marcar_configuracao_alterada,
+        )
+        self.check_incluir_periodo_atual.state(["!selected", "!alternate"])
+        self.check_incluir_periodo_atual.grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(
+            bloco_evolucao, text="Desmarcado (padrão): o último período de cada relatório fica de fora.",
+            foreground="gray", font=("Segoe UI", 8),
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
+
+        ttk.Label(bloco_evolucao, text="Produtos a exibir (Evolução/Alertas):", width=LARGURA_ROTULO, anchor="w").grid(
+            row=2, column=0, sticky="w", padx=6, pady=4
+        )
+        self.entrada_top_n_produtos = ttk.Entry(bloco_evolucao, width=8)
+        self.entrada_top_n_produtos.grid(row=2, column=1, sticky="w", padx=6, pady=4)
+        ttk.Label(bloco_evolucao, text="em branco = todos, ordenado por tendência", foreground="gray", font=("Segoe UI", 8)).grid(
+            row=3, column=0, columnspan=2, sticky="w", padx=6
+        )
+
+        ttk.Label(bloco_evolucao, text="Redução mínima p/ erosão (%):", width=LARGURA_ROTULO, anchor="w").grid(
+            row=4, column=0, sticky="w", padx=6, pady=(10, 4)
+        )
+        self.entrada_reducao_minima_erosao = ttk.Entry(bloco_evolucao, width=8)
+        self.entrada_reducao_minima_erosao.insert(0, "50")
+        self.entrada_reducao_minima_erosao.grid(row=4, column=1, sticky="w", padx=6, pady=(10, 4))
+        ttk.Label(bloco_evolucao, text="só compara os 2 períodos mais recentes", foreground="gray", font=("Segoe UI", 8)).grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
+        )
+
+        # --- Bloco 3: Alertas e granularidade ------------------------------
         bloco_alertas = ttk.LabelFrame(frame, text="Alertas e granularidade")
         bloco_alertas.pack(fill="x", padx=6, pady=(0, 6))
 
@@ -1363,6 +1397,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             corte_produtos = float(self.entrada_corte_produtos.get().replace(",", "."))
             cortes_grupos = self._ler_cortes_grupos()
             periodos_queda = int(self.entrada_periodos_queda.get())
+            texto_top_n = self.entrada_top_n_produtos.get().strip()
+            top_n_produtos = int(texto_top_n) if texto_top_n else None
+            reducao_minima_erosao = float(self.entrada_reducao_minima_erosao.get().replace(",", "."))
         except ValueError:
             messagebox.showerror("Parâmetros inválidos", "Verifique os campos numéricos em Configurações.")
             return
@@ -1373,6 +1410,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         if any(cortes_grupos[i] >= cortes_grupos[i + 1] for i in range(len(cortes_grupos) - 1)) or \
            any(c <= 0 or c >= 100 for c in cortes_grupos):
             messagebox.showerror("Parâmetros inválidos", "Os cortes de grupo devem ser crescentes e estar entre 0 e 100.")
+            return
+        if top_n_produtos is not None and top_n_produtos <= 0:
+            messagebox.showerror("Parâmetros inválidos", "Produtos a exibir deve ser um número positivo (ou em branco).")
+            return
+        if not (0 <= reducao_minima_erosao <= 100):
+            messagebox.showerror("Parâmetros inválidos", "Redução mínima para erosão deve estar entre 0 e 100.")
             return
 
         produtos_excluidos = self._produtos_excluidos()
@@ -1400,13 +1443,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._thread_geracao = threading.Thread(
             target=self._executar_geracao_em_thread,
             args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
-                  periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"])),
+                  periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"]),
+                  not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao),
             daemon=True,
         )
         self._thread_geracao.start()
 
     def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
-                                     cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao):
+                                     cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao,
+                                     excluir_periodo_atual, top_n_produtos, reducao_minima_erosao):
         try:
             resultados = af.gerar_analises_completas(
                 df_filtrado, granularidades,
@@ -1417,6 +1462,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 chaves_solicitadas=chaves_selecionadas,
                 callback_log=lambda mensagem: self._registrar_log(mensagem),
                 desconsiderar_balcao=desconsiderar_balcao,
+                excluir_periodo_atual=excluir_periodo_atual,
+                top_n_produtos=top_n_produtos,
+                reducao_minima_erosao=reducao_minima_erosao,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:

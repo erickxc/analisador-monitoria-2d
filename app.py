@@ -1269,8 +1269,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     "Nova versão disponível",
                     f"Há uma nova versão do {NOME_SISTEMA} disponível ({tag}).\n"
                     f"Versão instalada: {VERSAO_ATUAL}.\n\n"
-                    "Deseja baixar e instalar agora? O programa vai fechar e abrir a versão "
-                    "nova automaticamente.",
+                    "Deseja baixar e instalar agora? O programa vai fechar sozinho ao final — "
+                    "é só abrir de novo pra usar a versão nova.",
                 )
                 if instalar:
                     self._baixar_e_instalar_atualizacao(url_download_exe)
@@ -1308,7 +1308,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 url_download_exe,
                 callback_progresso=lambda pct: self.fila_eventos.put(("atualizacao_progresso", pct)),
             )
-            atualizacoes.aplicar_atualizacao_e_reiniciar(caminho_novo_exe)
+            atualizacoes.aplicar_atualizacao(caminho_novo_exe)
         except Exception as exc:
             self.fila_eventos.put(("atualizacao_instalacao_erro", str(exc)))
             return
@@ -1324,8 +1324,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         )
 
     def _ao_concluir_instalacao_atualizacao(self):
-        self._registrar_log("Atualização baixada. Reiniciando o programa...")
-        self._definir_status("Reiniciando com a nova versão...")
+        self._registrar_log("Atualização baixada e instalada. Feche e abra o programa novamente pra usar a nova versão.")
+        self._definir_status("Atualização instalada — abra o programa novamente.")
+        # O programa não se reabre sozinho de propósito (ver aplicar_atualizacao
+        # em atualizacoes.py) — o antivírus bloqueia essa reabertura automática.
+        messagebox.showinfo(
+            "Atualização instalada",
+            "A nova versão já foi baixada e instalada.\n\n"
+            "Feche este programa e abra-o novamente pra usar a versão nova.",
+        )
         # Fecha em um ciclo separado do loop de eventos, não aqui direto:
         # destruir a janela no meio da leitura da fila (_bombear_fila_eventos)
         # faz o próximo item pendente (esse log, por exemplo) ser processado

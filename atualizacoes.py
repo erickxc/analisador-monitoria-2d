@@ -121,6 +121,11 @@ def aplicar_atualizacao(caminho_novo_exe):
 
     caminho_atual = sys.executable
     caminho_bat = os.path.join(os.environ.get("TEMP", "."), "atualizar_analisador.bat")
+    # 90 tentativas x ~1s (ping -n 2) = ~90s de espera. 20 tentativas (~20s) não
+    # é suficiente quando o executável está numa pasta sincronizada por OneDrive
+    # (ou sendo escaneado por antivírus) — o move falhava sempre, o .bat desistia
+    # e se autodeletava, deixando o .exe baixado órfão em %TEMP% sem nunca
+    # substituir o atual (reproduzido e confirmado na prática).
     conteudo_bat = f"""@echo off
 setlocal
 set tentativas=0
@@ -129,15 +134,21 @@ set /a tentativas+=1
 ping -n 2 127.0.0.1 >nul
 move /y "{caminho_novo_exe}" "{caminho_atual}" >nul 2>&1
 if exist "{caminho_novo_exe}" (
-    if %tentativas% lss 20 goto esperar
+    if %tentativas% lss 90 goto esperar
 )
 del "%~f0"
 """
     with open(caminho_bat, "w", encoding="utf-8") as arquivo:
         arquivo.write(conteudo_bat)
 
+    # CREATE_NO_WINDOW (não DETACHED_PROCESS): um processo com DETACHED_PROCESS
+    # não tem console nenhum, então quando o .bat chama "ping"/"move" (programas
+    # de console), o Windows aloca um console NOVO pra cada um — visível como
+    # uma aba do Windows Terminal se abrindo e fechando a cada tentativa do
+    # loop (reproduzido e confirmado). Com CREATE_NO_WINDOW o cmd.exe já nasce
+    # com um console (oculto), que os filhos herdam em vez de pedir um novo.
     subprocess.Popen(
         ["cmd", "/c", caminho_bat],
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
         close_fds=True,
     )

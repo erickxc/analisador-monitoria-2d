@@ -20,6 +20,8 @@ COR_MARCA = "#1F4E78"
 COR_MARCA_CLARA = "#EAF0F6"
 COR_TEXTO_SECUNDARIO = "#6B7280"
 COR_LINHA_SUTIL = "#E2E5E9"
+COR_CABECALHO_TABELA = "#000000"
+COR_LINHA_ALTERNADA = "#F2F2F2"
 
 
 def _limitar(df):
@@ -51,7 +53,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     from reportlab.lib.units import cm
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     from reportlab.platypus import (
         SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak,
         HRFlowable, KeepTogether,
@@ -62,6 +64,8 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     cor_marca_clara = colors.HexColor(COR_MARCA_CLARA)
     cor_texto_secundario = colors.HexColor(COR_TEXTO_SECUNDARIO)
     cor_linha_sutil = colors.HexColor(COR_LINHA_SUTIL)
+    cor_cabecalho_tabela = colors.HexColor(COR_CABECALHO_TABELA)
+    cor_linha_alternada = colors.HexColor(COR_LINHA_ALTERNADA)
 
     largura_pagina, altura_pagina = landscape(A4)
     margem_lateral = 1.6 * cm
@@ -94,21 +98,21 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     )
 
     estilos = getSampleStyleSheet()
-    estilo_titulo_capa = ParagraphStyle(
-        "TituloCapa", parent=estilos["Title"], fontName="Helvetica-Bold",
-        fontSize=24, textColor=cor_marca, alignment=TA_CENTER, spaceAfter=2,
-    )
-    estilo_subtitulo_capa = ParagraphStyle(
-        "SubtituloCapa", parent=estilos["Normal"], fontName="Helvetica",
-        fontSize=12, textColor=cor_texto_secundario, alignment=TA_CENTER,
-    )
     estilo_empresa_capa = ParagraphStyle(
         "EmpresaCapa", parent=estilos["Normal"], fontName="Helvetica-Bold",
-        fontSize=14, textColor=cor_marca, alignment=TA_CENTER, spaceBefore=10,
+        fontSize=16, textColor=cor_marca, alignment=TA_CENTER, spaceBefore=10,
     )
     estilo_meta_capa = ParagraphStyle(
         "MetaCapa", parent=estilos["Normal"], fontName="Helvetica",
         fontSize=9.5, textColor=cor_texto_secundario, alignment=TA_CENTER, spaceBefore=3,
+    )
+    estilo_rotulo_metadados = ParagraphStyle(
+        "RotuloMetadados", parent=estilos["Normal"], fontName="Helvetica",
+        fontSize=9, textColor=cor_texto_secundario, alignment=TA_CENTER,
+    )
+    estilo_valor_metadados = ParagraphStyle(
+        "ValorMetadados", parent=estilos["Normal"], fontName="Helvetica-Bold",
+        fontSize=13, textColor=cor_marca, alignment=TA_CENTER,
     )
     estilo_secao = ParagraphStyle(
         "TituloSecao", parent=estilos["Heading2"], fontName="Helvetica-Bold",
@@ -126,28 +130,90 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
         "SemDados", parent=estilos["Normal"], fontName="Helvetica-Oblique",
         fontSize=9.5, textColor=cor_texto_secundario,
     )
+    # Células de tabela: Paragraph (não string crua) para quebrar linha —
+    # sem isso, cabeçalhos longos ("Períodos Consecutivos em Queda") não
+    # cabem na largura estreita de uma coluna numérica e vazam por cima do
+    # cabeçalho vizinho, em vez de quebrar em 2-3 linhas.
+    estilo_celula_texto = ParagraphStyle(
+        "CelulaTexto", parent=estilos["Normal"], fontName="Helvetica",
+        fontSize=8.5, leading=10.5, alignment=TA_LEFT,
+    )
+    estilo_celula_numero = ParagraphStyle(
+        "CelulaNumero", parent=estilos["Normal"], fontName="Helvetica",
+        fontSize=8.5, leading=10.5, alignment=TA_RIGHT,
+    )
+    estilo_cabecalho_texto = ParagraphStyle(
+        "CabecalhoTexto", parent=estilos["Normal"], fontName="Helvetica-Bold",
+        fontSize=8.5, leading=10.5, alignment=TA_LEFT, textColor=colors.white,
+    )
+    estilo_cabecalho_numero = ParagraphStyle(
+        "CabecalhoNumero", parent=estilos["Normal"], fontName="Helvetica-Bold",
+        fontSize=8.5, leading=10.5, alignment=TA_RIGHT, textColor=colors.white,
+    )
 
     elementos = []
 
     # ------------------------------------------------------------------
     # Capa
     # ------------------------------------------------------------------
-    elementos.append(Spacer(1, 3 * cm))
+    agora = datetime.now()
+    elementos.append(Spacer(1, 1.8 * cm))
     if os.path.exists(CAMINHO_LOGO):
-        logo_capa = Image(CAMINHO_LOGO, width=3 * cm, height=3 * cm * 306 / 572)
+        logo_capa = Image(CAMINHO_LOGO, width=3.4 * cm, height=3.4 * cm * 306 / 572)
         logo_capa.hAlign = "CENTER"
         elementos.append(logo_capa)
-        elementos.append(Spacer(1, 18))
-    elementos.append(Paragraph(NOME_SISTEMA, estilo_titulo_capa))
-    elementos.append(Paragraph("Relatório Padrão", estilo_subtitulo_capa))
+        elementos.append(Spacer(1, 20))
+
+    # Faixa preta com o nome do sistema — mesma cor de destaque usada nos
+    # cabeçalhos das tabelas, para a capa e o conteúdo lerem como um só
+    # documento visualmente coerente.
+    estilo_titulo_faixa = ParagraphStyle(
+        "TituloFaixa", parent=estilos["Title"], fontName="Helvetica-Bold",
+        fontSize=26, leading=30, textColor=colors.white, alignment=TA_CENTER, spaceAfter=4,
+    )
+    estilo_subtitulo_faixa = ParagraphStyle(
+        "SubtituloFaixa", parent=estilos["Normal"], fontName="Helvetica",
+        fontSize=12, leading=15, textColor=colors.HexColor("#CCCCCC"), alignment=TA_CENTER,
+    )
+    faixa_titulo = Table(
+        [[[Paragraph(NOME_SISTEMA, estilo_titulo_faixa), Paragraph("Relatório Padrão", estilo_subtitulo_faixa)]]],
+        colWidths=[largura_util],
+    )
+    faixa_titulo.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.black),
+        ("TOPPADDING", (0, 0), (-1, -1), 16),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 16),
+    ]))
+    elementos.append(faixa_titulo)
+    elementos.append(Spacer(1, 26))
+
     if nome_empresa:
         elementos.append(Paragraph(nome_empresa, estilo_empresa_capa))
-    elementos.append(Spacer(1, 12))
+        elementos.append(Spacer(1, 16))
     elementos.append(HRFlowable(width=5 * cm, thickness=1.4, color=cor_marca, hAlign="CENTER"))
-    elementos.append(Spacer(1, 16))
+    elementos.append(Spacer(1, 18))
+
+    # Cartão de metadados (quem gerou, quando) — visualmente separado do
+    # título/empresa, para ficar claro que é informação de rodapé da capa.
+    colunas_metadados = []
     if nome_usuario:
-        elementos.append(Paragraph(f"Gerado por {nome_usuario}", estilo_meta_capa))
-    elementos.append(Paragraph(f"Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}", estilo_meta_capa))
+        colunas_metadados.append([Paragraph("Gerado por", estilo_rotulo_metadados), Paragraph(nome_usuario, estilo_valor_metadados)])
+    colunas_metadados.append([
+        Paragraph("Data e hora de extração", estilo_rotulo_metadados),
+        Paragraph(agora.strftime("%d/%m/%Y às %H:%M"), estilo_valor_metadados),
+    ])
+    largura_coluna_metadados = largura_util / (2 * len(colunas_metadados))
+    cartao_metadados = Table(
+        [colunas_metadados], colWidths=[largura_coluna_metadados * 2] * len(colunas_metadados), hAlign="CENTER",
+    )
+    cartao_metadados.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    elementos.append(cartao_metadados)
+    elementos.append(Spacer(1, 14))
     elementos.append(Paragraph(NOME_EMPRESA, estilo_meta_capa))
     elementos.append(PageBreak())
 
@@ -179,24 +245,32 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
                 for coluna in colunas
             ]
 
+            linha_cabecalho = [
+                Paragraph(str(coluna), estilo_cabecalho_numero if numerica else estilo_cabecalho_texto)
+                for coluna, numerica in zip(colunas, eh_numerica)
+            ]
             linhas_formatadas = []
             for _, linha in df_limitado.iterrows():
                 linha_fmt = []
                 for coluna, numerica in zip(colunas, eh_numerica):
                     valor = linha[coluna]
-                    if coluna in colunas_moeda:
-                        linha_fmt.append(_formatar_moeda_br(valor))
+                    if isinstance(valor, bool):
+                        texto_valor = "Sim" if valor else "Não"
+                    elif coluna in colunas_moeda:
+                        texto_valor = _formatar_moeda_br(valor)
                     elif numerica and isinstance(valor, float):
-                        linha_fmt.append(_formatar_numero_br(valor))
+                        texto_valor = _formatar_numero_br(valor)
                     else:
-                        linha_fmt.append(str(valor))
+                        texto_valor = str(valor)
+                    estilo_celula = estilo_celula_numero if numerica else estilo_celula_texto
+                    linha_fmt.append(Paragraph(texto_valor, estilo_celula))
                 linhas_formatadas.append(linha_fmt)
-            dados_tabela = [colunas] + linhas_formatadas
+            dados_tabela = [linha_cabecalho] + linhas_formatadas
 
             n_numericas = sum(eh_numerica)
             n_texto = len(colunas) - n_numericas
-            largura_numerica = 2.7 * cm
-            largura_texto = max((largura_util - largura_numerica * n_numericas) / max(n_texto, 1), 3.2 * cm)
+            largura_numerica = 2.3 * cm
+            largura_texto = max((largura_util - largura_numerica * n_numericas) / max(n_texto, 1), 2.6 * cm)
             larguras = [largura_numerica if numerica else largura_texto for numerica in eh_numerica]
             soma_larguras = sum(larguras)
             if soma_larguras > largura_util:
@@ -205,18 +279,18 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
 
             tabela = Table(dados_tabela, colWidths=larguras, repeatRows=1)
             estilo_tabela = [
-                ("BACKGROUND", (0, 0), (-1, 0), cor_marca),
+                ("BACKGROUND", (0, 0), (-1, 0), cor_cabecalho_tabela),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("LINEBELOW", (0, 0), (-1, 0), 1.2, cor_marca),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("LINEBELOW", (0, 0), (-1, 0), 1.2, cor_cabecalho_tabela),
                 ("LINEBELOW", (0, 1), (-1, -2), 0.4, cor_linha_sutil),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, cor_marca_clara]),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, cor_linha_alternada]),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ]
             for indice, numerica in enumerate(eh_numerica):
@@ -313,7 +387,9 @@ def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, no
                 celulas = tabela.add_row().cells
                 for i, coluna in enumerate(colunas):
                     valor = linha[coluna]
-                    if coluna in colunas_moeda:
+                    if isinstance(valor, bool):
+                        texto_valor = "Sim" if valor else "Não"
+                    elif coluna in colunas_moeda:
                         texto_valor = _formatar_moeda_br(valor)
                     elif eh_numerica[i] and isinstance(valor, float):
                         texto_valor = _formatar_numero_br(valor)

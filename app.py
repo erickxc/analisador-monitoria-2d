@@ -1506,7 +1506,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._registrar_log(
             f"Iniciando geração do relatório. Granularidades: {granularidades}. "
             f"Relatórios selecionados: {len(chaves_selecionadas)}. "
-            f"Clientes excluídos: {len(clientes_excluidos)}. Produtos excluídos: {len(produtos_excluidos)}."
+            f"Clientes excluídos: {len(clientes_excluidos)}. Produtos excluídos: {len(self._produtos_excluidos())}."
         )
         self._definir_status("Processando análises em segundo plano...")
 

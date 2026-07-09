@@ -1363,15 +1363,18 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 queda_minima_reais=queda_minima_erosao_reais,
             )
             if precisa("erosao_clientes"):
+                # "Periodo" (mês atual) é sempre o mesmo valor em toda linha
+                # — não é uma coluna útil aqui, mesmo motivo de Alertas de
+                # Queda não ter "Período Atual". Fica só internamente (usado
+                # por correlacao_produto_cliente pra agrupar por período).
                 analises["erosao_clientes"] = erosao.rename(columns={
                     "Periodo_Pico": "Período do Pico",
                     "Receita_Periodo_Anterior": "Receita no Pico",
-                    "Periodo": "Período Atual",
                     "Receita": "Receita Atual",
                     "Reducao_Receita": "Queda em R$",
                     "Reducao_Percentual": "% de Queda",
                     "Parou_De_Comprar": "Parou de Comprar",
-                })
+                }).drop(columns=["Periodo"])
 
         abc = None
         if precisa_abc:

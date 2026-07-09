@@ -12,6 +12,8 @@ tabela foi cortada.
 import os
 from datetime import datetime
 
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
 from recursos import CAMINHO_LOGO, NOME_SISTEMA, NOME_EMPRESA
 
 MAX_LINHAS_TABELA = 50
@@ -45,6 +47,20 @@ def _formatar_moeda_br(valor):
 def _formatar_numero_br(valor):
     texto = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return texto
+
+
+def _largura_maior_palavra(texto, fonte="Helvetica-Bold", tamanho=8.5):
+    """
+    Largura (em pontos) da maior palavra de um texto, na fonte/tamanho dados.
+    Usado para garantir que a coluna nunca fique mais estreita que a maior
+    palavra do próprio cabeçalho — sem isso, um cabeçalho longo numa coluna
+    numérica estreita ("Períodos Consecutivos em Queda") quebra no meio da
+    palavra ("Co" / "nsecutivos") em vez de só trocar de linha no espaço.
+    """
+    palavras = str(texto).split()
+    if not palavras:
+        return 0
+    return max(stringWidth(palavra, fonte, tamanho) for palavra in palavras)
 
 
 def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa="", descricao_analise=None):
@@ -277,11 +293,29 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
             n_texto = len(colunas) - n_numericas
             largura_numerica = 2.3 * cm
             largura_texto = max((largura_util - largura_numerica * n_numericas) / max(n_texto, 1), 2.6 * cm)
-            larguras = [largura_numerica if numerica else largura_texto for numerica in eh_numerica]
-            soma_larguras = sum(larguras)
-            if soma_larguras > largura_util:
-                fator = largura_util / soma_larguras
-                larguras = [largura * fator for largura in larguras]
+            padding_celula = 14 + 6  # LEFTPADDING + RIGHTPADDING da tabela + margem de segurança, em pontos
+            larguras_minimas = [_largura_maior_palavra(coluna) + padding_celula for coluna in colunas]
+            larguras_base = [
+                max(largura_numerica if numerica else largura_texto, minima)
+                for numerica, minima in zip(eh_numerica, larguras_minimas)
+            ]
+
+            soma_base = sum(larguras_base)
+            if soma_base > largura_util:
+                # Corta só a "sobra" de cada coluna (base − mínimo da maior
+                # palavra do cabeçalho) — nunca abaixo do mínimo, senão volta
+                # a quebrar palavra no meio (era o que um corte uniforme
+                # fazia antes, desfazendo o próprio mínimo calculado acima).
+                excesso = soma_base - largura_util
+                sobras = [b - m for b, m in zip(larguras_base, larguras_minimas)]
+                sobra_total = sum(sobras)
+                if sobra_total > 0:
+                    fator_corte = min(excesso / sobra_total, 1.0)
+                    larguras = [b - s * fator_corte for b, s in zip(larguras_base, sobras)]
+                else:
+                    larguras = larguras_base
+            else:
+                larguras = larguras_base
 
             tabela = Table(dados_tabela, colWidths=larguras, repeatRows=1)
             estilo_tabela = [

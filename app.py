@@ -416,13 +416,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._registrar_pagina_nav("Relatório Padrão", "📄", self.aba_padrao, area_conteudo)
 
         self.aba_personalizados = pb.ConstrutorRelatorioFrame(
-            area_conteudo, obter_dataframe=lambda: self.df,
+            area_conteudo, obter_dataframe=lambda: self._dataframe_para_analise(),
             relatorios_personalizados=self.relatorios_personalizados,
         )
         self._registrar_pagina_nav("Relatórios Personalizados", "📊", self.aba_personalizados, area_conteudo)
 
         self.aba_graficos = gf.PainelGraficosFrame(
-            area_conteudo, obter_dataframe=lambda: self.df,
+            area_conteudo, obter_dataframe=lambda: self._dataframe_para_analise(),
             obter_abc_df=self._obter_abc_df_atual,
         )
         self._registrar_pagina_nav("Gráficos", "📈", self.aba_graficos, area_conteudo)
@@ -776,6 +776,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         frame, entrada_busca, combo_grupo, arvore = self._montar_lista_com_filtro(
             master, "Produtos considerados na análise", ("check", "produto", "grupo", "freq_simples", "freq_acumulado")
         )
+
+        self.check_somente_alto_giro = ttk.Checkbutton(
+            frame,
+            text="Considerar somente produtos de alto giro (marcados abaixo) em todos os relatórios e gráficos",
+            command=self._marcar_configuracao_alterada,
+        )
+        self.check_somente_alto_giro.state(["selected", "!alternate"])
+        self.check_somente_alto_giro.pack(fill="x", padx=6, pady=(6, 0), before=frame.winfo_children()[0])
+
         arvore.heading("check", text="Considerar?")
         arvore.heading("produto", text="Produto", command=self._ordenar_produtos)
         arvore.heading("grupo", text="Grupo")
@@ -995,6 +1004,23 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
     def _produtos_excluidos(self):
         return [produto for produto, considerado in self.estado_produtos.items() if not considerado]
+
+    def _dataframe_para_analise(self):
+        """
+        DataFrame efetivo para qualquer consumidor (relatório padrão,
+        gráficos, relatórios personalizados): com o checkbox "Considerar
+        somente produtos de alto giro" marcado (padrão), filtra fora os
+        produtos desmarcados na lista "Produtos considerados na análise" —
+        senão usa a base inteira, sem filtro nenhum. Um único ponto pra essa
+        regra valer igual em todo lugar, em vez de cada aba decidir sozinha
+        se respeita ou não a lista de produtos.
+        """
+        if self.df is None:
+            return None
+        if not self.check_somente_alto_giro.instate(["selected"]):
+            return self.df
+        produtos_excluidos = self._produtos_excluidos()
+        return self.df[~self.df["descricao"].isin(produtos_excluidos)] if produtos_excluidos else self.df
 
     # ------------------------------------------------------------------
     # Salvar/carregar configuração da análise (parâmetros + exclusões) em JSON
@@ -1463,8 +1489,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             messagebox.showerror("Parâmetros inválidos", "Redução mínima para erosão deve estar entre 0 e 100.")
             return
 
-        produtos_excluidos = self._produtos_excluidos()
-        df_filtrado = self.df[~self.df["descricao"].isin(produtos_excluidos)] if produtos_excluidos else self.df
+        df_filtrado = self._dataframe_para_analise()
         if df_filtrado.empty:
             messagebox.showerror("Relatório", "Nenhuma linha restante após excluir os produtos desmarcados.")
             return

@@ -52,7 +52,7 @@ O catálogo tem duas categorias, em `CATALOGO_RELATORIOS` (`app.py`):
 
 - **Excluir período mais recente** (checkbox, padrão ligado): ver seção acima — afeta todo relatório "por período", não os Top N.
 - **Clientes excluídos** (lista marcada em Configurações): removidos da base antes de qualquer cálculo de ABC/frequência/renúncia — não aparecem em nenhum relatório dependente disso.
-- **Produtos considerados** (lista de Configurações): filtra o DataFrame inteiro antes de rodar `gerar_analises_completas` — afeta literalmente todos os relatórios, não só os de produto.
+- **"Considerar somente produtos de alto giro"** (checkbox, padrão ligado) + lista "Produtos considerados na análise": com o checkbox marcado, os produtos desmarcados na lista são filtrados de **tudo** — Relatório Padrão, Gráficos e Relatórios Personalizados (um único ponto, `_dataframe_para_analise()`, usado pelos três). Desmarcado, todos os três voltam a usar a base inteira, sem filtro de produto nenhum. Antes desse checkbox existir, esse filtro só valia pro Relatório Padrão — Gráficos e Personalizados sempre usaram a base inteira, mesmo com produtos desmarcados.
 - **Cortes de grupo (30/50/60%)** e **corte de produtos (80%)**: afetam ABC/Poder de Compra de clientes e a prévia de produtos, respectivamente.
 - **"Desconsiderar clientes balcão da frequência"** (checkbox): desde o PR #9, a faixa "Balcão" é consistente entre a prévia da tela (`classificar_clientes_agregado`) e o relatório exportado (`classificar_faixas`/`classificar_abc`) — mesmo comportamento nos dois lugares.
 - **"Produtos a exibir"** (Evolução/Alertas) e **"Redução mínima p/ erosão"**: ver tabela de Tendências e Alertas acima.

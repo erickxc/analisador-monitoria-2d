@@ -850,6 +850,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         """Destaca visualmente o botão de prévia quando clientes/produtos mudam e a contagem fica desatualizada."""
         if hasattr(self, "botao_atualizar_preview"):
             self.botao_atualizar_preview.config(text="⚠ Atualizar prévia (parâmetros alterados)", style="Accent.TButton")
+        self._salvar_configuracao_automatica()
 
     # ------------------------------------------------------------------
     # Carregamento e limpeza do CSV
@@ -886,6 +887,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.botao_limpar_base.config(state="normal")
         self._popular_lista_clientes()
         self._popular_lista_produtos()
+        self._carregar_configuracao_automatica()
         self._registrar_log(f"CSV carregado com sucesso: {len(self.df)} linhas, "
                              f"{self.df['Cliente'].nunique()} clientes, {self.df['descricao'].nunique()} produtos.")
         self._definir_status(f"CSV carregado: {len(self.df)} linhas.")
@@ -1053,18 +1055,57 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     # Salvar/carregar configuração da análise (parâmetros + exclusões) em JSON
     # ------------------------------------------------------------------
 
+    def _construir_configuracao_atual(self):
+        return {
+            "corte_produtos": self.entrada_corte_produtos.get(),
+            "cortes_grupo": [entrada.get() for entrada in self.entradas_corte_grupo],
+            "max_por_grupo": self.entrada_max_por_grupo.get(),
+            "periodos_queda": self.entrada_periodos_queda.get(),
+            "granularidade": self.var_granularidade.get(),
+            "clientes_excluidos": self._clientes_excluidos(),
+            "produtos_excluidos": self._produtos_excluidos(),
+            "formato_exportacao": getattr(self, "var_formato_exportacao", None) and self.var_formato_exportacao.get(),
+        }
+
+    def _caminho_configuracao_automatica(self):
+        return recursos.caminho_dados_locais("config_automatica.json")
+
+    def _salvar_configuracao_automatica(self):
+        """
+        Persiste silenciosamente (sem diálogo) os parâmetros e exclusões
+        atuais a cada mudança — sem isso, desmarcar um produto/cliente só
+        vale pra sessão atual: fechar e reabrir o programa (ou só recarregar
+        o CSV) volta tudo ao padrão automático (Grupo 1), obrigando a
+        desmarcar de novo toda vez. Chamada de _marcar_configuracao_alterada.
+        Diferente de "Salvar configuração" (ação explícita do usuário, para
+        um arquivo escolhido por ele) — este arquivo é interno, recarregado
+        sozinho em _selecionar_csv.
+        """
+        try:
+            configuracao = self._construir_configuracao_atual()
+        except AttributeError:
+            return  # interface ainda não terminou de montar — nada a salvar ainda
+        try:
+            with open(self._caminho_configuracao_automatica(), "w", encoding="utf-8") as arquivo:
+                json.dump(configuracao, arquivo, ensure_ascii=False, indent=2)
+        except OSError:
+            pass  # não impede o uso do programa se não puder gravar
+
+    def _carregar_configuracao_automatica(self):
+        """Restaura silenciosamente a última configuração salva automaticamente, se existir (ver _salvar_configuracao_automatica)."""
+        caminho = self._caminho_configuracao_automatica()
+        if not os.path.exists(caminho):
+            return
+        try:
+            with open(caminho, "r", encoding="utf-8") as arquivo:
+                configuracao = json.load(arquivo)
+        except (OSError, json.JSONDecodeError):
+            return
+        self._aplicar_configuracao(configuracao)
+
     def _salvar_configuracao_analise(self):
         try:
-            configuracao = {
-                "corte_produtos": self.entrada_corte_produtos.get(),
-                "cortes_grupo": [entrada.get() for entrada in self.entradas_corte_grupo],
-                "max_por_grupo": self.entrada_max_por_grupo.get(),
-                "periodos_queda": self.entrada_periodos_queda.get(),
-                "granularidade": self.var_granularidade.get(),
-                "clientes_excluidos": self._clientes_excluidos(),
-                "produtos_excluidos": self._produtos_excluidos(),
-                "formato_exportacao": getattr(self, "var_formato_exportacao", None) and self.var_formato_exportacao.get(),
-            }
+            configuracao = self._construir_configuracao_atual()
         except AttributeError:
             messagebox.showwarning("Salvar configuração", "A interface ainda não terminou de carregar.")
             return
@@ -1088,6 +1129,17 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             messagebox.showerror("Carregar configuração", f"Não foi possível ler o arquivo:\n{exc}")
             return
 
+        self._aplicar_configuracao(configuracao)
+        self._registrar_log(f"Configuração da análise carregada de: {caminho}")
+        if self.df is not None:
+            messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
+        else:
+            messagebox.showinfo(
+                "Carregar configuração",
+                "Parâmetros carregados. Selecione o CSV para também aplicar clientes/produtos excluídos salvos.",
+            )
+
+    def _aplicar_configuracao(self, configuracao):
         self.entrada_corte_produtos.delete(0, "end")
         self.entrada_corte_produtos.insert(0, configuracao.get("corte_produtos", "80"))
         self._escrever_cortes_grupos(configuracao.get("cortes_grupo", ["30", "50", "60"]))
@@ -1122,14 +1174,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 for produto in self.estado_produtos:
                     self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
                     self._produtos_manual.add(produto)
-            messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
-        else:
-            messagebox.showinfo(
-                "Carregar configuração",
-                "Parâmetros carregados. Selecione o CSV para também aplicar clientes/produtos excluídos salvos.",
-            )
-
-        self._registrar_log(f"Configuração da análise carregada de: {caminho}")
 
     # ------------------------------------------------------------------
     # Parâmetros: sugestão e pré-visualização de grupos

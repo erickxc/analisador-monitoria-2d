@@ -207,6 +207,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.estado_clientes = {}   # cliente -> True se EXCLUÍDO
         self.estado_produtos = {}   # produto -> True se CONSIDERADO
         self._produtos_manual = set()  # produtos com "Considerar?" alterado à mão — não são resincronizados com o Grupo 1
+        self._caminho_csv_atual = None  # chave da configuração automática (ver _salvar/_carregar_configuracao_automatica)
         self.thread_em_execucao = False
         self._thread_geracao = None
 
@@ -885,6 +886,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         self.progress.stop()
 
+        self._caminho_csv_atual = os.path.abspath(caminho)
         self.label_arquivo.config(text=os.path.basename(caminho))
         self.botao_limpar_base.config(state="normal")
         self._popular_lista_clientes()
@@ -904,6 +906,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.estado_clientes = {}
         self.estado_produtos = {}
         self._produtos_manual = set()
+        self._caminho_csv_atual = None
         self.dados_clientes = []
         self.dados_produtos = []
 
@@ -1072,6 +1075,17 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _caminho_configuracao_automatica(self):
         return recursos.caminho_dados_locais("config_automatica.json")
 
+    def _ler_configuracoes_automaticas(self):
+        """Todas as configurações automáticas salvas, por CSV (ver _salvar_configuracao_automatica). {} se o arquivo não existir/estiver corrompido."""
+        caminho = self._caminho_configuracao_automatica()
+        if not os.path.exists(caminho):
+            return {}
+        try:
+            with open(caminho, "r", encoding="utf-8") as arquivo:
+                return json.load(arquivo)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
     def _salvar_configuracao_automatica(self):
         """
         Persiste silenciosamente (sem diálogo) os parâmetros e exclusões
@@ -1082,26 +1096,33 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         Diferente de "Salvar configuração" (ação explícita do usuário, para
         um arquivo escolhido por ele) — este arquivo é interno, recarregado
         sozinho em _selecionar_csv.
+
+        Guardado por CSV (caminho absoluto como chave) num único arquivo —
+        sem isso, a exclusão de produtos de uma base (ex.: gap.base.csv)
+        vazava pra outra base com nomes de produto parecidos (ex.:
+        data.teste.csv), já que os nomes batem mas os produtos "certos"
+        pra cada base são diferentes.
         """
+        if not self._caminho_csv_atual:
+            return  # nenhum CSV carregado ainda — nada pra chavear
         try:
             configuracao = self._construir_configuracao_atual()
         except AttributeError:
             return  # interface ainda não terminou de montar — nada a salvar ainda
+        todas = self._ler_configuracoes_automaticas()
+        todas[self._caminho_csv_atual] = configuracao
         try:
             with open(self._caminho_configuracao_automatica(), "w", encoding="utf-8") as arquivo:
-                json.dump(configuracao, arquivo, ensure_ascii=False, indent=2)
+                json.dump(todas, arquivo, ensure_ascii=False, indent=2)
         except OSError:
             pass  # não impede o uso do programa se não puder gravar
 
     def _carregar_configuracao_automatica(self):
-        """Restaura silenciosamente a última configuração salva automaticamente, se existir (ver _salvar_configuracao_automatica)."""
-        caminho = self._caminho_configuracao_automatica()
-        if not os.path.exists(caminho):
+        """Restaura silenciosamente a última configuração salva automaticamente para o CSV atual, se existir (ver _salvar_configuracao_automatica)."""
+        if not self._caminho_csv_atual:
             return
-        try:
-            with open(caminho, "r", encoding="utf-8") as arquivo:
-                configuracao = json.load(arquivo)
-        except (OSError, json.JSONDecodeError):
+        configuracao = self._ler_configuracoes_automaticas().get(self._caminho_csv_atual)
+        if configuracao is None:
             return
         self._aplicar_configuracao(configuracao)
 

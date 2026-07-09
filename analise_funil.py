@@ -264,14 +264,20 @@ def _tendencia_percentual(receitas_ordenadas):
     return (media_ultimos / media_primeiros - 1) * 100
 
 
-def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2, top_n=None):
+def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2, top_n=None, queda_minima_reais=0.0):
     """
     Evolução de receita/quantidade por produto ao longo dos períodos.
     Sinaliza produtos com queda em N períodos consecutivos (parametrizável).
 
+    queda_minima_reais: só entram em alertas_df produtos cuja "Queda em R$"
+    (Receita Precedente à Queda − Receita Atual) seja de pelo menos esse
+    valor — evita alertar sobre quedas pequenas, sem relevância financeira
+    (padrão 0 = qualquer queda, sem piso).
+
     top_n: se informado, mantém só os N produtos com maior tendência em
     evolucao_df (todos os períodos desses produtos) e as N linhas com maior
-    "Queda em R$" em alertas_df. None = todos os produtos.
+    "Queda em R$" em alertas_df (já respeitando queda_minima_reais).
+    None = todos os produtos.
 
     Retorna (evolucao_df, alertas_df):
       - evolucao_df: uma linha por (produto, período), ordenada por tendência
@@ -365,6 +371,8 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
 
     alertas_df = pd.DataFrame(alertas)
     if not alertas_df.empty:
+        if queda_minima_reais > 0:
+            alertas_df = alertas_df[alertas_df["Queda em R$"] >= queda_minima_reais]
         alertas_df.sort_values("Queda em R$", ascending=False, inplace=True)
         if top_n is not None:
             alertas_df = alertas_df.head(top_n)
@@ -1261,7 +1269,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                               cortes_clientes=(30.0, 50.0, 60.0), corte_produtos=80.0,
                               periodos_queda_consecutiva=2, callback_log=None, chaves_solicitadas=None,
                               desconsiderar_balcao=False, excluir_periodo_atual=True,
-                              top_n_produtos=None, reducao_minima_erosao=50.0):
+                              top_n_produtos=None, reducao_minima_erosao=50.0, queda_minima_alerta=0.0):
     """
     Roda as análises solicitadas para cada granularidade escolhida.
 
@@ -1332,6 +1340,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             logar(f"[{granularidade}] Calculando tendência de produtos...")
             evolucao, alertas = tendencia_produtos(
                 df_periodo, granularidade, periodos_queda_consecutiva, top_n=top_n_produtos,
+                queda_minima_reais=queda_minima_alerta,
             )
             if precisa("evolucao_produtos"):
                 analises["evolucao_produtos"] = evolucao

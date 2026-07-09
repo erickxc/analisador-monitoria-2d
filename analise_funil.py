@@ -441,6 +441,90 @@ def produtos_alta_e_queda(df, granularidade="Mensal", top_n=10):
     return em_alta, em_queda
 
 
+def status_alto_giro(df, desconsiderar_balcao=False):
+    """
+    Relatório executivo, sem granularidade (sempre por mês-calendário):
+    para cada produto presente em df (o chamador já filtra pra só os de
+    alto giro — esta função não faz corte de produto nenhum, só reflete o
+    que recebe; desmarcar um produto na tela some com ele daqui
+    automaticamente, sem precisar de lógica de "substituição"), mostra a
+    receita do último mês completo, se está em alta ou queda (variação %
+    vs. o mês anterior) e dois clientes de destaque nesse produto nesse
+    mês: quem mais comprou (Cliente_Destaque) e quem mais reduziu a
+    compra em relação ao mês anterior (Cliente_Em_Queda — "—" se ninguém
+    caiu). desconsiderar_balcao exclui clientes-balcão (venda de
+    balcão/consumidor final, ver REGEX_BALCAO) da escolha desses dois
+    clientes — sem isso, "BALCAO AVULSO" domina como destaque/queda na
+    maioria dos produtos, sem ser um cliente real e endereçável.
+    """
+    colunas_vazias = ["descricao", "Receita_Atual", "Status", "Variacao_Percentual",
+                       "Cliente_Destaque", "Cliente_Em_Queda"]
+    periodos_ordenados = _ordenar_periodos(df["Periodo_Mensal"].unique(), "Mensal")
+    if len(periodos_ordenados) < 2:
+        return pd.DataFrame(columns=colunas_vazias)
+
+    periodo_anterior, periodo_atual = periodos_ordenados[-2], periodos_ordenados[-1]
+    base = df[df["Periodo_Mensal"].isin([periodo_anterior, periodo_atual])]
+
+    por_produto = base.groupby(["descricao", "Periodo_Mensal"], as_index=False)["Receita"].sum()
+    pivot_produto = por_produto.pivot(index="descricao", columns="Periodo_Mensal", values="Receita").fillna(0)
+    receita_atual = pivot_produto.get(periodo_atual, pd.Series(0.0, index=pivot_produto.index))
+    receita_anterior = pivot_produto.get(periodo_anterior, pd.Series(0.0, index=pivot_produto.index))
+
+    resultado = pd.DataFrame({
+        "descricao": pivot_produto.index,
+        "Receita_Atual": receita_atual.values,
+        "Receita_Anterior": receita_anterior.values,
+    })
+    resultado["Variacao_Percentual"] = np.where(
+        resultado["Receita_Anterior"] > 0,
+        (resultado["Receita_Atual"] - resultado["Receita_Anterior"]) / resultado["Receita_Anterior"] * 100,
+        np.nan,
+    )
+    resultado["Status"] = np.select(
+        [resultado["Variacao_Percentual"] > 0, resultado["Variacao_Percentual"] < 0],
+        ["Em alta", "Em queda"],
+        default="Estável",
+    )
+
+    # Cliente destaque: quem mais comprou esse produto no mês atual.
+    # Cliente em queda: quem mais reduziu a compra desse produto em
+    # relação ao mês anterior (só entra quem realmente caiu).
+    por_produto_cliente = base.groupby(["descricao", "Cliente", "Periodo_Mensal"], as_index=False)["Receita"].sum()
+    pivot_cliente = por_produto_cliente.pivot_table(
+        index=["descricao", "Cliente"], columns="Periodo_Mensal", values="Receita", fill_value=0,
+    )
+    tabela_cliente = pivot_cliente.get(periodo_atual, pd.Series(0.0, index=pivot_cliente.index)).reset_index(name="Receita_Atual_Cliente")
+    tabela_cliente["Receita_Anterior_Cliente"] = pivot_cliente.get(
+        periodo_anterior, pd.Series(0.0, index=pivot_cliente.index)
+    ).values
+    tabela_cliente["Reducao_Cliente"] = tabela_cliente["Receita_Anterior_Cliente"] - tabela_cliente["Receita_Atual_Cliente"]
+    if desconsiderar_balcao:
+        tabela_cliente = tabela_cliente[~tabela_cliente["Cliente"].str.contains(REGEX_BALCAO, na=False)]
+
+    destaque = (
+        tabela_cliente[tabela_cliente["Receita_Atual_Cliente"] > 0]
+        .sort_values("Receita_Atual_Cliente", ascending=False)
+        .drop_duplicates("descricao")
+        .set_index("descricao")["Cliente"]
+    )
+    em_queda_cliente = (
+        tabela_cliente[tabela_cliente["Reducao_Cliente"] > 0]
+        .sort_values("Reducao_Cliente", ascending=False)
+        .drop_duplicates("descricao")
+        .set_index("descricao")["Cliente"]
+    )
+
+    resultado["Cliente_Destaque"] = resultado["descricao"].map(destaque).fillna("—")
+    resultado["Cliente_Em_Queda"] = resultado["descricao"].map(em_queda_cliente).fillna("—")
+
+    resultado = resultado[["descricao", "Receita_Atual", "Status", "Variacao_Percentual",
+                            "Cliente_Destaque", "Cliente_Em_Queda"]]
+    resultado.sort_values("Receita_Atual", ascending=False, inplace=True)
+    resultado.reset_index(drop=True, inplace=True)
+    return resultado
+
+
 # ---------------------------------------------------------------------------
 # Erosão de clientes por produto
 # ---------------------------------------------------------------------------
@@ -1337,7 +1421,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
 
     todas_as_chaves = {
         "top_produtos", "top_fabricantes", "poder_compra_clientes",
-        "evolucao_produtos", "alertas_queda", "erosao_clientes", "erosao_geral", "abc", "abc_produtos",
+        "evolucao_produtos", "alertas_queda", "erosao_clientes", "erosao_geral", "alto_giro", "abc", "abc_produtos",
         "migracao_abc", "migracao_resumo", "migracao_score_clientes",
         "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
         "correlacao_produto_cliente", "impacto_financeiro_churn",
@@ -1420,6 +1504,15 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 "Reducao_Percentual": "% de Queda",
                 "Parou_De_Comprar": "Parou de Comprar",
             }).drop(columns=["Periodo"])
+
+        if precisa("alto_giro"):
+            logar(f"[{granularidade}] Calculando status de alto giro...")
+            analises["alto_giro"] = status_alto_giro(df_periodo, desconsiderar_balcao=desconsiderar_balcao).rename(columns={
+                "Receita_Atual": "Receita Atual",
+                "Variacao_Percentual": "% de Variação",
+                "Cliente_Destaque": "Cliente Destaque",
+                "Cliente_Em_Queda": "Cliente em Queda",
+            })
 
         abc = None
         if precisa_abc:

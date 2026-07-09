@@ -445,7 +445,7 @@ def produtos_alta_e_queda(df, granularidade="Mensal", top_n=10):
 # Erosão de clientes por produto
 # ---------------------------------------------------------------------------
 
-def erosao_clientes_por_produto(df, produtos_alvo=None, reducao_minima_percentual=50.0):
+def erosao_clientes_por_produto(df, produtos_alvo=None, reducao_minima_percentual=50.0, queda_minima_reais=0.0):
     """
     Relatório executivo, sem granularidade (sempre por Periodo_Mensal — mesmo
     padrão de poder_compra_agregado): para cada cliente+produto, compara a
@@ -463,6 +463,10 @@ def erosao_clientes_por_produto(df, produtos_alvo=None, reducao_minima_percentua
     reducao_minima_percentual: só entram no resultado clientes cuja queda,
     do pico até o último mês, foi de pelo menos esse percentual (padrão
     50% — ajustável; use 0 para ver toda e qualquer redução).
+
+    queda_minima_reais: além do percentual, a queda em R$ (Receita_Periodo_
+    Anterior − Receita) também precisa ser de pelo menos esse valor (padrão
+    0 = sem piso) — os dois critérios precisam ser atingidos juntos.
     """
     colunas_vazias = ["Cliente", "descricao", "Periodo_Pico", "Receita_Periodo_Anterior",
                        "Periodo", "Receita", "Reducao_Receita", "Reducao_Percentual", "Parou_De_Comprar"]
@@ -507,6 +511,8 @@ def erosao_clientes_por_produto(df, produtos_alvo=None, reducao_minima_percentua
     erosao["Parou_De_Comprar"] = erosao["Receita"] == 0
 
     erosao = erosao[erosao["Reducao_Percentual"] >= reducao_minima_percentual]
+    if queda_minima_reais > 0:
+        erosao = erosao[erosao["Reducao_Receita"] >= queda_minima_reais]
     erosao["Periodo_Pico"] = erosao["Periodo_Pico"].apply(lambda p: _formatar_rotulo_periodo(p, "Mensal"))
     erosao["Periodo"] = erosao["Periodo"].apply(lambda p: _formatar_rotulo_periodo(p, "Mensal"))
     erosao = erosao[["Cliente", "descricao", "Periodo_Pico", "Receita_Periodo_Anterior",
@@ -1269,7 +1275,8 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                               cortes_clientes=(30.0, 50.0, 60.0), corte_produtos=80.0,
                               periodos_queda_consecutiva=2, callback_log=None, chaves_solicitadas=None,
                               desconsiderar_balcao=False, excluir_periodo_atual=True,
-                              top_n_produtos=None, reducao_minima_erosao=50.0, queda_minima_alerta=0.0):
+                              top_n_produtos=None, reducao_minima_erosao=50.0, queda_minima_alerta=0.0,
+                              queda_minima_erosao_reais=0.0):
     """
     Roda as análises solicitadas para cada granularidade escolhida.
 
@@ -1354,6 +1361,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             erosao = erosao_clientes_por_produto(
                 df_periodo, produtos_alvo=produtos_em_queda,
                 reducao_minima_percentual=reducao_minima_erosao,
+                queda_minima_reais=queda_minima_erosao_reais,
             )
             if precisa("erosao_clientes"):
                 analises["erosao_clientes"] = erosao.rename(columns={

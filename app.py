@@ -699,6 +699,16 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
         )
 
+        ttk.Label(bloco_evolucao, text="Queda mínima em R$ p/ erosão:", width=LARGURA_ROTULO, anchor="w").grid(
+            row=8, column=0, sticky="w", padx=6, pady=(0, 4)
+        )
+        self.entrada_queda_minima_erosao = ttk.Entry(bloco_evolucao, width=8)
+        self.entrada_queda_minima_erosao.insert(0, "3000")
+        self.entrada_queda_minima_erosao.grid(row=8, column=1, sticky="w", padx=6, pady=(0, 4))
+        ttk.Label(bloco_evolucao, text="além do % — os dois pisos precisam ser atingidos juntos", foreground="gray", font=("Segoe UI", 8)).grid(
+            row=9, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
+        )
+
         # --- Bloco 3: Alertas e granularidade ------------------------------
         bloco_alertas = ttk.LabelFrame(frame, text="Alertas e granularidade")
         bloco_alertas.pack(fill="x", padx=6, pady=(0, 6))
@@ -1496,6 +1506,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             top_n_produtos = int(texto_top_n) if texto_top_n else None
             reducao_minima_erosao = float(self.entrada_reducao_minima_erosao.get().replace(",", "."))
             queda_minima_alerta = float(self.entrada_queda_minima_alerta.get().replace(",", "."))
+            queda_minima_erosao = float(self.entrada_queda_minima_erosao.get().replace(",", "."))
         except ValueError:
             messagebox.showerror("Parâmetros inválidos", "Verifique os campos numéricos em Configurações.")
             return
@@ -1515,6 +1526,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         if queda_minima_alerta < 0:
             messagebox.showerror("Parâmetros inválidos", "Queda mínima em R$ para alerta deve ser zero ou positiva.")
+            return
+        if queda_minima_erosao < 0:
+            messagebox.showerror("Parâmetros inválidos", "Queda mínima em R$ para erosão deve ser zero ou positiva.")
             return
 
         df_filtrado = self._dataframe_para_analise()
@@ -1543,14 +1557,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
                   periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"]),
                   not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao,
-                  queda_minima_alerta),
+                  queda_minima_alerta, queda_minima_erosao),
             daemon=True,
         )
         self._thread_geracao.start()
 
     def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
                                      cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao,
-                                     excluir_periodo_atual, top_n_produtos, reducao_minima_erosao, queda_minima_alerta):
+                                     excluir_periodo_atual, top_n_produtos, reducao_minima_erosao, queda_minima_alerta,
+                                     queda_minima_erosao):
         try:
             resultados = af.gerar_analises_completas(
                 df_filtrado, granularidades,
@@ -1565,6 +1580,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 top_n_produtos=top_n_produtos,
                 reducao_minima_erosao=reducao_minima_erosao,
                 queda_minima_alerta=queda_minima_alerta,
+                queda_minima_erosao_reais=queda_minima_erosao,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:

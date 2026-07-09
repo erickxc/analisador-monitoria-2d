@@ -517,7 +517,7 @@ def erosao_clientes_por_produto(df, produtos_alvo=None, reducao_minima_percentua
     erosao["Periodo"] = erosao["Periodo"].apply(lambda p: _formatar_rotulo_periodo(p, "Mensal"))
     erosao = erosao[["Cliente", "descricao", "Periodo_Pico", "Receita_Periodo_Anterior",
                       "Periodo", "Receita", "Reducao_Receita", "Reducao_Percentual", "Parou_De_Comprar"]]
-    erosao.sort_values("Reducao_Receita", ascending=False, inplace=True)
+    erosao.sort_values(["Cliente", "Reducao_Receita"], ascending=[True, False], inplace=True)
     erosao.reset_index(drop=True, inplace=True)
 
     return erosao

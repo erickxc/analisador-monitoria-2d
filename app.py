@@ -204,6 +204,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.relatorios_personalizados = {}
         self.estado_clientes = {}   # cliente -> True se EXCLUÍDO
         self.estado_produtos = {}   # produto -> True se CONSIDERADO
+        self._produtos_manual = set()  # produtos com "Considerar?" alterado à mão — não são resincronizados com o Grupo 1
         self.thread_em_execucao = False
         self._thread_geracao = None
 
@@ -835,6 +836,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         novo_valor = not dicionario_estado.get(linha, False)
         dicionario_estado[linha] = novo_valor
+        if dicionario_estado is self.estado_produtos:
+            # Marcado à mão — não é mais resincronizado com o Grupo 1 em
+            # _recalcular_classificacoes(), senão o clique seria desfeito na
+            # próxima vez que o corte de produtos for recalculado.
+            self._produtos_manual.add(linha)
         valores = list(arvore.item(linha, "values"))
         valores[0] = "☑" if novo_valor else "☐"
         arvore.item(linha, values=valores)
@@ -893,6 +899,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.resultados_analise = None
         self.estado_clientes = {}
         self.estado_produtos = {}
+        self._produtos_manual = set()
         self.dados_clientes = []
         self.dados_produtos = []
 
@@ -974,6 +981,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         produtos = sorted(p for p in self.df["descricao"].unique() if p != af.DESCRICAO_NAO_HARMONIZADA)
 
         self.dados_produtos = []
+        self._produtos_manual = set()  # csv novo — nenhuma escolha manual ainda
         if qtd_nao_harmonizados > 0:
             rotulo = f"⚠ {af.DESCRICAO_NAO_HARMONIZADA} ({qtd_nao_harmonizados} lançamentos sem descrição)"
             self.dados_produtos.append({"chave": af.DESCRICAO_NAO_HARMONIZADA, "rotulo": rotulo, "grupo": "-", "freq_simples": 0.0, "freq_acumulado": 0.0})
@@ -1113,6 +1121,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 produtos_excluidos_salvos = set(produtos_excluidos_salvos)
                 for produto in self.estado_produtos:
                     self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
+                    self._produtos_manual.add(produto)
             messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
         else:
             messagebox.showinfo(
@@ -1221,8 +1230,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         # "Alto giro" = Grupo 1 pelo corte de receita ATUAL — recalculado
         # aqui (não só na primeira vez que o CSV carrega) pra não desalinhar
         # dos checkboxes quando o corte muda (ex.: ao carregar uma
-        # configuração salva com um corte de produtos diferente).
-        self.estado_produtos = {item["chave"]: item["grupo"] == "Grupo 1" for item in self.dados_produtos}
+        # configuração salva com um corte de produtos diferente). Produtos
+        # marcados/desmarcados à mão (_produtos_manual) ficam de fora dessa
+        # resincronização — senão um clique do usuário seria desfeito na
+        # próxima reclassificação.
+        for item in self.dados_produtos:
+            if item["chave"] not in self._produtos_manual:
+                self.estado_produtos[item["chave"]] = item["grupo"] == "Grupo 1"
 
         nomes_grupos_clientes = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais", "Balcão", "Excluído"]
         if hasattr(self, "combo_grupo_clientes"):

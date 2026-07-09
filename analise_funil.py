@@ -1270,7 +1270,7 @@ PONTOS_SUBIU_FAIXA = 3
 PONTOS_DESCEU_FAIXA = -2
 
 
-def pontuacao_migracao_clientes(migracao_df, abc_df):
+def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
     """
     Score de migração por cliente, acumulado ao longo de TODO o histórico de
     transições disponível (não só a mais recente): +3 por subida de faixa,
@@ -1287,17 +1287,33 @@ def pontuacao_migracao_clientes(migracao_df, abc_df):
         return pd.DataFrame(columns=colunas)
 
     if migracao_df.empty:
-        contagem_migracoes = pd.DataFrame(columns=["Subiu", "Desceu"])
+        # Índice nomeado "Cliente" mesmo vazio — sem isso, o merge abaixo
+        # (on="Cliente") quebra com KeyError quando não há NENHUMA migração
+        # no período (comum em granularidades com poucos pontos, ex.: Anual).
+        contagem_migracoes = pd.DataFrame(columns=["Subiu", "Desceu"], index=pd.Index([], name="Cliente"))
     else:
         contagem_migracoes = migracao_df.groupby(["Cliente", "Direcao"]).size().unstack(fill_value=0)
     for direcao in ("Subiu", "Desceu"):
         if direcao not in contagem_migracoes.columns:
             contagem_migracoes[direcao] = 0
 
-    # "Oportunidades de migrar" por cliente = nº de transições em que ele
-    # aparece nos dois períodos (mesma base usada por migracao_abc: períodos
-    # do cliente - 1, nunca negativo).
-    transicoes_por_cliente = (abc_df.groupby("Cliente")["Periodo"].nunique() - 1).clip(lower=0)
+    # "Oportunidades de migrar" por cliente = nº de PARES DE PERÍODOS
+    # CONSECUTIVOS (na ordem cronológica) em que ele aparece nos dois lados
+    # — a mesma regra usada por migracao_abc. Não é simplesmente "nº de
+    # períodos em que aparece menos 1": um cliente que compra em ago/25 e só
+    # volta em dez/25 (pulando set/out/nov) tem 2 períodos, mas ZERO pares
+    # consecutivos reais — "nunique - 1" superestimaria as oportunidades e
+    # inflaria Percentual_Permanencia pra quem tem histórico "com buracos".
+    periodos_ordenados = _ordenar_periodos(abc_df["Periodo"].unique(), granularidade)
+    ordem_periodo = {periodo: indice for indice, periodo in enumerate(periodos_ordenados)}
+
+    def _pares_consecutivos(periodos_do_cliente):
+        indices = sorted(ordem_periodo[p] for p in periodos_do_cliente)
+        return sum(1 for anterior, atual in zip(indices, indices[1:]) if atual - anterior == 1)
+
+    transicoes_por_cliente = abc_df.groupby("Cliente")["Periodo"].apply(
+        lambda serie: _pares_consecutivos(serie.unique())
+    )
 
     resultado = transicoes_por_cliente.rename("Transicoes").reset_index()
     resultado = resultado.merge(
@@ -1572,7 +1588,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 # Resumo e score não têm checkbox próprio no catálogo — são
                 # subprodutos automáticos sempre que "migracao_abc" é pedido.
                 analises["migracao_resumo"] = resumo_migracao(migracao)
-                analises["migracao_score_clientes"] = pontuacao_migracao_clientes(migracao, abc)
+                analises["migracao_score_clientes"] = pontuacao_migracao_clientes(migracao, abc, granularidade)
 
         if precisa("produtos_em_alta", "produtos_em_queda"):
             logar(f"[{granularidade}] Montando boletim de produtos em alta/queda...")

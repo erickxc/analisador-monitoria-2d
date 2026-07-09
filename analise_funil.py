@@ -278,7 +278,12 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
         (Tendencia_Pct) descendente — ver _tendencia_percentual. "Periodo" é
         um rótulo legível (ex.: "ago/25"); a ordem cronológica já foi
         aplicada antes dessa conversão.
-      - alertas_df: uma linha por produto sinalizado em queda consistente.
+      - alertas_df: uma linha por produto em queda AGORA — a sequência de
+        quedas precisa terminar no período mais recente (queda atual, não
+        um histórico antigo já recuperado). Receita_Primeiro_Periodo/
+        Receita_Ultimo_Periodo se referem à janela dessa sequência (o
+        período-base antes da primeira queda até o último período), não aos
+        extremos de todo o histórico do produto.
     """
     col_periodo = COLUNA_PERIODO[granularidade]
     periodos_ordenados = _ordenar_periodos(df[col_periodo].unique(), granularidade)
@@ -293,14 +298,21 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
     evolucao.sort_values(["descricao", "_ordem"], inplace=True)
 
     evolucao["Receita_Periodo_Anterior"] = evolucao.groupby("descricao")["Receita"].shift(1)
+    # Receita negativa (devoluções/estornos líquidos no mês) quebra a leitura
+    # de "queda"/"alta" da variação percentual — período anterior negativo ou
+    # zero já não entra no cálculo; período atual negativo também não, pois
+    # o percentual resultante não tem leitura de magnitude coerente.
+    anterior_valido = evolucao["Receita_Periodo_Anterior"].notnull() & (evolucao["Receita_Periodo_Anterior"] > 0)
+    atual_valido = evolucao["Receita"] >= 0
     evolucao["Variacao_Percentual"] = np.where(
-        (evolucao["Receita_Periodo_Anterior"].notnull()) & (evolucao["Receita_Periodo_Anterior"] != 0),
+        anterior_valido & atual_valido,
         (evolucao["Receita"] - evolucao["Receita_Periodo_Anterior"]) / evolucao["Receita_Periodo_Anterior"] * 100,
         np.nan,
     )
 
-    # Detecta queda em N períodos consecutivos por produto e calcula a
-    # tendência geral (mesma passada pelos grupos, evita repetir o groupby)
+    # Detecta queda em N períodos consecutivos terminando no período mais
+    # recente (queda atual) e calcula a tendência geral (mesma passada pelos
+    # grupos, evita repetir o groupby).
     alertas = []
     tendencia_por_produto = {}
     for produto, grupo in evolucao.groupby("descricao"):
@@ -308,19 +320,18 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
         tendencia_por_produto[produto] = _tendencia_percentual(grupo["Receita"].to_numpy())
 
         quedas_seguidas = 0
-        maior_sequencia = 0
         for variacao in grupo["Variacao_Percentual"]:
             if pd.notnull(variacao) and variacao < 0:
                 quedas_seguidas += 1
-                maior_sequencia = max(maior_sequencia, quedas_seguidas)
             else:
                 quedas_seguidas = 0
-        if maior_sequencia >= periodos_queda_consecutiva:
+        if quedas_seguidas >= periodos_queda_consecutiva:
+            janela = grupo.tail(quedas_seguidas + 1)
             alertas.append({
                 "descricao": produto,
-                "Periodos_Consecutivos_Em_Queda": maior_sequencia,
+                "Periodos_Consecutivos_Em_Queda": quedas_seguidas,
                 "Receita_Ultimo_Periodo": grupo["Receita"].iloc[-1],
-                "Receita_Primeiro_Periodo": grupo["Receita"].iloc[0],
+                "Receita_Primeiro_Periodo": janela["Receita"].iloc[0],
             })
 
     evolucao["Tendencia_Pct"] = evolucao["descricao"].map(tendencia_por_produto)

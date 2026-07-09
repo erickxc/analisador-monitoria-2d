@@ -1980,7 +1980,7 @@ DESCRICAO_ANALISE = {
 
 COLUNAS_MOEDA_POR_ANALISE = {
     "top_produtos": ["Receita"],
-    "poder_compra_clientes": ["Poder_De_Compra"],
+    "poder_compra_clientes": ["Poder_De_Compra", "Receita Média Recente (3 meses)"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
     "alto_giro": ["Receita Atual"],
     "alertas_queda": ["Receita Atual", "Receita Precedente à Queda", "Queda em R$"],

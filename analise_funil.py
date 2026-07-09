@@ -194,6 +194,16 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     comportamento típico do dia a dia. Sempre por Periodo_Mensal, independente
     da granularidade escolhida na tela (um "pico" é um conceito mensal).
 
+    Compara esse potencial contra o desempenho recente (média dos 3 meses-
+    calendário mais recentes disponíveis na base, não os "3 melhores" —
+    meses sem compra do cliente entram como 0): Receita_Media_Recente e
+    Desempenho_Vs_Potencial_Pct (recente ÷ potencial × 100). Também conta,
+    dentro desses mesmos 3 meses recentes, quantos tiveram receita ≤ 40% do
+    potencial (ou seja, uma queda de 60%+ frente ao que o cliente já
+    demonstrou ser capaz de comprar) — Meses_60pct_Abaixo_Potencial.
+    Clientes sem poder de compra (0 — nunca compraram) não entram nessa
+    contagem, sem base de comparação.
+
     Grupo e Percentual_Acumulado vêm de classificar_clientes_agregado — ou
     seja, do tamanho do cliente pela receita TOTAL, não pelo poder de compra.
     Decisão deliberada: a segmentação em grupos continua refletindo o
@@ -201,24 +211,47 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     substitui a segmentação por receita.
 
     Retorna (sem período, uma linha por cliente): Cliente, Poder_De_Compra,
-    Percentual_Acumulado, Grupo.
+    Receita_Media_Recente, Desempenho_Vs_Potencial_Pct,
+    Meses_60pct_Abaixo_Potencial, Percentual_Acumulado, Grupo.
     """
     excluidos = set(clientes_excluidos or [])
     base = df[~df["Cliente"].isin(excluidos)] if excluidos else df
 
     receita_mensal = base.groupby(["Cliente", "Periodo_Mensal"], as_index=False)["Receita"].sum()
-    top3_por_cliente = (
-        receita_mensal.sort_values("Receita", ascending=False)
-        .groupby("Cliente")["Receita"].apply(lambda serie: serie.head(3).mean())
-        .rename("Poder_De_Compra")
-    )
+    pivot = receita_mensal.pivot(index="Cliente", columns="Periodo_Mensal", values="Receita").fillna(0.0)
+
+    top3_por_cliente = pivot.apply(lambda linha: linha.sort_values(ascending=False).head(3).mean(), axis=1)
+    top3_por_cliente.name = "Poder_De_Compra"
+
+    periodos_ordenados = _ordenar_periodos(pivot.columns, "Mensal")
+    ultimos_3 = periodos_ordenados[-3:]
+    colunas_recentes = pivot[ultimos_3]
+    media_recente = colunas_recentes.mean(axis=1)
+    media_recente.name = "Receita_Media_Recente"
+
+    # "60% abaixo do potencial" = receita do mês ≤ 40% do Poder_De_Compra.
+    limite_40pct = top3_por_cliente * 0.4
+    meses_abaixo = colunas_recentes.le(limite_40pct, axis=0).sum(axis=1)
+    meses_abaixo = meses_abaixo.where(top3_por_cliente > 0, 0)
+    meses_abaixo.name = "Meses_60pct_Abaixo_Potencial"
 
     classificacao = classificar_clientes_agregado(df, clientes_excluidos, cortes, desconsiderar_balcao)
     resultado = classificacao[["Cliente", "Percentual_Acumulado", "Faixa"]].rename(columns={"Faixa": "Grupo"})
     resultado = resultado.merge(top3_por_cliente, on="Cliente", how="left")
+    resultado = resultado.merge(media_recente, on="Cliente", how="left")
+    resultado = resultado.merge(meses_abaixo, on="Cliente", how="left")
     resultado["Poder_De_Compra"] = resultado["Poder_De_Compra"].fillna(0.0)
+    resultado["Receita_Media_Recente"] = resultado["Receita_Media_Recente"].fillna(0.0)
+    resultado["Meses_60pct_Abaixo_Potencial"] = resultado["Meses_60pct_Abaixo_Potencial"].fillna(0).astype(int)
 
-    resultado = resultado[["Cliente", "Poder_De_Compra", "Percentual_Acumulado", "Grupo"]]
+    resultado["Desempenho_Vs_Potencial_Pct"] = np.where(
+        resultado["Poder_De_Compra"] > 0,
+        resultado["Receita_Media_Recente"] / resultado["Poder_De_Compra"] * 100,
+        np.nan,
+    )
+
+    resultado = resultado[["Cliente", "Poder_De_Compra", "Receita_Media_Recente", "Desempenho_Vs_Potencial_Pct",
+                            "Meses_60pct_Abaixo_Potencial", "Percentual_Acumulado", "Grupo"]]
     resultado.sort_values("Poder_De_Compra", ascending=False, inplace=True)
     resultado.reset_index(drop=True, inplace=True)
     return resultado
@@ -1521,7 +1554,11 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             logar(f"[{granularidade}] Calculando poder de compra agregado dos clientes...")
             analises["poder_compra_clientes"] = poder_compra_agregado(
                 df_periodo, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
-            )
+            ).rename(columns={
+                "Receita_Media_Recente": "Receita Média Recente (3 meses)",
+                "Desempenho_Vs_Potencial_Pct": "% do Potencial Realizado",
+                "Meses_60pct_Abaixo_Potencial": "Meses 60% Abaixo do Potencial",
+            })
 
         if precisa("abc_produtos"):
             logar(f"[{granularidade}] Classificando produtos por faixa de faturamento...")

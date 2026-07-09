@@ -330,8 +330,10 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
             alertas.append({
                 "descricao": produto,
                 "Periodos_Consecutivos_Em_Queda": quedas_seguidas,
-                "Receita_Ultimo_Periodo": grupo["Receita"].iloc[-1],
+                "Periodo_Primeiro": _formatar_rotulo_periodo(janela["Periodo"].iloc[0], granularidade),
                 "Receita_Primeiro_Periodo": janela["Receita"].iloc[0],
+                "Periodo_Ultimo": _formatar_rotulo_periodo(grupo["Periodo"].iloc[-1], granularidade),
+                "Receita_Ultimo_Periodo": grupo["Receita"].iloc[-1],
             })
 
     evolucao["Tendencia_Pct"] = evolucao["descricao"].map(tendencia_por_produto)

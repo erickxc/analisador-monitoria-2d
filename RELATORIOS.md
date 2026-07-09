@@ -22,15 +22,14 @@ O catálogo tem duas categorias, em `CATALOGO_RELATORIOS` (`app.py`):
 
 | Chave | Rótulo | Função | O que é |
 |---|---|---|---|
-| `top_fabricantes` | Venda por Fabricante (Top Fabricantes) | `top_produtos`/`top_fabricantes` | Top 20 por Receita (soma de todo o período carregado, **não** respeita granularidade) |
-| `top_produtos` | Venda por Produto (Top Produtos) | idem | idem, agrupado por `descricao` |
+| `top_produtos` | Venda por Produto (Top Produtos) | `top_produtos()` | Top 20 por Receita (soma de todo o período carregado, **não** respeita granularidade) |
 | `evolucao_produtos` | Tendência de Produtos | `tendencia_produtos()` | Receita/QTD por produto e período (rótulo legível: `ago/25`, `T3/25`, `S1/25`, `2025`), com variação % vs. período anterior. Ordenado por `Tendencia_Pct` (média dos últimos 3 períodos vs. média dos 3 primeiros — preferido a CAGR ponto-a-ponto ou regressão linear, testado contra `data.teste.csv`) descendente. Campo "Produtos a exibir" na tela limita a top N por tendência (vazio = todos). |
 | `abc` | Faturamento e Segmentação de Clientes (ABC) | `classificar_abc` → `classificar_faixas` | Por período, ordena clientes por receita e divide em faixas por % acumulado (`Grupo 1/2/3/Demais`, cortes padrão 30/50/60%, mais faixa **"Balcão"** própria se o checkbox de balcão estiver marcado — com `Percentual_Individual` real, `Percentual_Acumulado` = NaN, nunca misturada com "Grupo 1"). Mostra só os **5 clientes de maior receita por (período, faixa)** — `top_clientes_por_grupo`, ajustável só via código. Traz `Renuncia*` (queda de receita vs. período anterior); **não** traz mais frequência (removida — não fazia sentido junto de um corte "top 5"). |
 | `migracao_abc` | Migração de Grupo (inclui resumo e score por cliente) | `migracao_abc()` + `resumo_migracao()` + `pontuacao_migracao_clientes()` | Marcar esta chave gera **3 abas**: (1) `Migracao_ABC` — quem subiu/desceu de faixa entre períodos consecutivos, com causa quando uma heurística bate com folga (produto abandonado ≥70% da receita, frequência caiu pela metade+, ticket médio caiu 40%+, ou produto novo ≥50% da receita atual — célula fica **em branco** se nada bater, sem "estimativa" genérica); (2) `Migracao_Resumo` — `Qtd_Subiu`/`Qtd_Desceu` por transição de período; (3) `Migracao_Score_Clientes` — score acumulado por cliente em todo o histórico (+3 por subida, -2 por queda) e `Percentual_Permanencia` (% das transições sem migrar de faixa). A classificação ABC usada aqui é sempre a **completa** (sem o corte de top-5 do relatório "ABC"), senão a migração só enxergaria 5 clientes por grupo. |
 
-`top_fabricantes`/`top_produtos` são as únicas do catálogo que **não variam por granularidade** — somam a base inteira, sempre.
+`top_produtos` é a única do catálogo que **não varia por granularidade** — soma a base inteira, sempre.
 
-> `top_clientes` ("Venda por Cliente / Top Clientes") foi removido do catálogo por falta de uso — virou o gráfico "Top Clientes por Receita" (ver seção Gráficos abaixo).
+> `top_clientes` ("Venda por Cliente / Top Clientes") e `top_fabricantes` ("Venda por Fabricante / Top Fabricantes") foram removidos do catálogo por falta de uso — viraram os gráficos "Top Clientes por Receita" e "Top Fabricantes por Receita" (ver seção Gráficos abaixo).
 
 ### Relatórios Gerenciais
 
@@ -70,13 +69,14 @@ Tabela dinâmica livre (`pandas.pivot_table`, com `margins=True` = linha/coluna 
 
 ## Gráficos (`graficos.py`)
 
-Cinco visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` do cliente (última classificação disponível), exceto onde indicado:
+Seis visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` do cliente (última classificação disponível), exceto onde indicado:
 
 1. **Vendas por Fabricante** — QTD × Receita, um ponto por (fabricante, cliente).
 2. **Vendas por Produto** — QTD × Receita por (produto, cliente); pode colorir por Faixa ABC **ou** por Fabricante.
 3. **Receita Agrupada** — receita total por Fabricante ou por Produto, ordenado decrescente (sem cor por faixa).
 4. **Afinidade Cliente × Fabricante** — % do faturamento do cliente que vem daquele fabricante (eixo X) × frequência de compra (eixo Y).
 5. **Top Clientes por Receita** — receita total dos N clientes de maior faturamento (10/20/50/100, ajustável), ordenado decrescente, sem cor por faixa. Substitui o relatório `top_clientes` removido do catálogo.
+6. **Top Fabricantes por Receita** — mesma ideia, por fabricante (N ajustável). Substitui o relatório `top_fabricantes` removido do catálogo.
 
 Exportação: só PNG, um gráfico por vez (a view atualmente selecionada).
 

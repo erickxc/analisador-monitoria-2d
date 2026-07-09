@@ -146,7 +146,6 @@ COR_ACCENT = f"#{COR_CABECALHO}"  # mesma cor de destaque usada nos cabeçalhos 
 # para as chaves internas já calculadas por analise_funil.gerar_analises_completas.
 CATALOGO_RELATORIOS = [
     ("Relatórios Gerais", [
-        ("top_fabricantes", "Venda por Fabricante (Top Fabricantes)"),
         ("top_produtos", "Venda por Produto (Top Produtos)"),
         ("evolucao_produtos", "Tendência de Produtos"),
         ("abc", "Faturamento e Segmentação de Clientes (ABC)"),
@@ -1938,7 +1937,6 @@ def _criar_capa(workbook, resultados_analise, nome_usuario="", nome_empresa=""):
 
 NOMES_ANALISE = {
     "top_produtos": "Top_Produtos",
-    "top_fabricantes": "Top_Fabricantes",
     "poder_compra_clientes": "Poder_Compra_Clientes",
     "evolucao_produtos": "Evolucao_Produtos",
     "alto_giro": "Alto_Giro",
@@ -1962,7 +1960,6 @@ NOMES_ANALISE = {
 # não desalinhar entre formatos conforme a lógica muda.
 DESCRICAO_ANALISE = {
     "top_produtos": "Top 20 produtos por receita, somando toda a base carregada — não varia por granularidade.",
-    "top_fabricantes": "Top 20 fabricantes por receita, somando toda a base carregada — não varia por granularidade.",
     "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida.",
     "evolucao_produtos": "Receita e quantidade por produto ao longo do tempo, ordenado pela tendência (média dos últimos 3 períodos vs. dos 3 primeiros).",
     "alto_giro": "Status do mês mais recente de cada produto de alto giro: receita, se está em alta ou queda vs. o mês anterior, o cliente que mais comprou e o que mais reduziu a compra. Some/entra sozinho conforme os produtos considerados mudam.",
@@ -1983,7 +1980,6 @@ DESCRICAO_ANALISE = {
 
 COLUNAS_MOEDA_POR_ANALISE = {
     "top_produtos": ["Receita"],
-    "top_fabricantes": ["Receita"],
     "poder_compra_clientes": ["Poder_De_Compra"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
     "alto_giro": ["Receita Atual"],

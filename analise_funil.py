@@ -172,23 +172,12 @@ def _ordenar_periodos(periodos, granularidade):
 
 
 # ---------------------------------------------------------------------------
-# Top produtos e top clientes
+# Top produtos
 # ---------------------------------------------------------------------------
 
 def top_produtos(df, n=20):
     resultado = (
         df.groupby("descricao", as_index=False)
-        .agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
-        .sort_values("Receita", ascending=False)
-        .head(n)
-        .reset_index(drop=True)
-    )
-    return resultado
-
-
-def top_fabricantes(df, n=20):
-    resultado = (
-        df.groupby("NOME_FABRICANTE", as_index=False)
         .agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
         .sort_values("Receita", ascending=False)
         .head(n)
@@ -1420,7 +1409,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             callback_log(mensagem)
 
     todas_as_chaves = {
-        "top_produtos", "top_fabricantes", "poder_compra_clientes",
+        "top_produtos", "poder_compra_clientes",
         "evolucao_produtos", "alertas_queda", "erosao_clientes", "erosao_geral", "alto_giro", "abc", "abc_produtos",
         "migracao_abc", "migracao_resumo", "migracao_score_clientes",
         "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
@@ -1570,8 +1559,6 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
 
         if precisa("top_produtos"):
             analises["top_produtos"] = top_produtos(df)
-        if precisa("top_fabricantes"):
-            analises["top_fabricantes"] = top_fabricantes(df)
 
         resultados[granularidade] = analises
         logar(f"[{granularidade}] Concluído.")

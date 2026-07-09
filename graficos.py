@@ -132,6 +132,25 @@ def desenhar_top_clientes(ax, df, top_n=20):
     ax.set_title(f"Top {top_n} Clientes por Receita")
 
 
+def desenhar_top_fabricantes(ax, df, top_n=20):
+    """
+    View: os top_n fabricantes de maior receita (soma de todo o período
+    carregado) — substitui o antigo relatório "Venda por Fabricante (Top
+    Fabricantes)", removido do catálogo (mesmo tratamento do Top Clientes);
+    como gráfico, dá pra ver de cara o degrau entre os maiores fabricantes.
+    """
+    ax.clear()
+    agrupado = df.groupby("NOME_FABRICANTE", as_index=False).agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
+    agrupado.sort_values("Receita", ascending=False, inplace=True)
+    agrupado = agrupado.head(top_n)
+
+    ax.scatter(range(len(agrupado)), agrupado["Receita"], c="#1565c0", alpha=0.7)
+    ax.set_xticks(range(len(agrupado)))
+    ax.set_xticklabels(agrupado["NOME_FABRICANTE"], rotation=90, fontsize=6)
+    ax.set_ylabel("Receita (R$)")
+    ax.set_title(f"Top {top_n} Fabricantes por Receita")
+
+
 def desenhar_afinidade_cliente_fabricante(ax, df, abc_df):
     """
     View 4: por cliente, participação % de cada fabricante no faturamento do
@@ -176,6 +195,7 @@ class PainelGraficosFrame(ttk.Frame):
         "Receita por Fabricante ou Produto",
         "Afinidade Cliente-Fabricante",
         "Top Clientes por Receita",
+        "Top Fabricantes por Receita",
     ]
 
     def __init__(self, master, obter_dataframe, obter_abc_df):
@@ -226,6 +246,10 @@ class PainelGraficosFrame(ttk.Frame):
             self.label_opcao.config(text="Quantidade de clientes:")
             self.combo_opcao["values"] = ["10", "20", "50", "100"]
             self.combo_opcao.current(1)
+        elif view == "Top Fabricantes por Receita":
+            self.label_opcao.config(text="Quantidade de fabricantes:")
+            self.combo_opcao["values"] = ["10", "20", "50", "100"]
+            self.combo_opcao.current(1)
         else:
             self.combo_opcao["values"] = []
             self.combo_opcao.set("")
@@ -251,6 +275,8 @@ class PainelGraficosFrame(ttk.Frame):
                 desenhar_afinidade_cliente_fabricante(self.eixo, df, abc_df)
             elif view == "Top Clientes por Receita":
                 desenhar_top_clientes(self.eixo, df, top_n=int(opcao) if opcao else 20)
+            elif view == "Top Fabricantes por Receita":
+                desenhar_top_fabricantes(self.eixo, df, top_n=int(opcao) if opcao else 20)
         except Exception as exc:
             messagebox.showerror("Erro ao gerar gráfico", str(exc))
             return

@@ -974,10 +974,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         self._ordem_produtos = False
         self._recalcular_classificacoes()
-        # "Alto giro" por padrão = Grupo 1 (top do corte de receita definido
-        # em Configurações) — ponto de partida; o usuário pode ajustar
-        # manualmente marcando/desmarcando produtos individuais depois.
-        self.estado_produtos = {item["chave"]: item["grupo"] == "Grupo 1" for item in self.dados_produtos}
 
     def _buscar_produtos(self, texto):
         # Mesma lógica de _buscar_clientes: busca por nome ignora o filtro de
@@ -1092,17 +1088,21 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             for cliente in self.estado_clientes:
                 self.estado_clientes[cliente] = cliente in clientes_excluidos_salvos
 
+            # _recalcular_classificacoes() já resincroniza "alto giro" com o
+            # Grupo 1 do corte de produtos recém-carregado — precisa rodar
+            # ANTES da lista salva, senão o passo abaixo (explícito) seria
+            # sobrescrito pelo padrão de Grupo 1.
+            self._recalcular_classificacoes()
+
             # None (chave ausente) = configuração salva antes desse recurso
-            # existir — não sobrescreve o padrão (Grupo 1) já aplicado no
-            # carregamento do CSV. Lista vazia é uma escolha explícita do
-            # usuário (nenhum produto excluído) e é respeitada normalmente.
+            # existir — não sobrescreve o padrão (Grupo 1) recém-aplicado.
+            # Lista vazia é uma escolha explícita do usuário (nenhum produto
+            # excluído) e é respeitada normalmente.
             produtos_excluidos_salvos = configuracao.get("produtos_excluidos")
             if produtos_excluidos_salvos is not None:
                 produtos_excluidos_salvos = set(produtos_excluidos_salvos)
                 for produto in self.estado_produtos:
                     self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
-
-            self._recalcular_classificacoes()
             messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
         else:
             messagebox.showinfo(
@@ -1208,6 +1208,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             item["grupo"] = mapa_grupo_produto.get(item["chave"], "-")
             item["freq_simples"] = mapa_freq_simples_produto.get(item["chave"], 0.0)
             item["freq_acumulado"] = mapa_freq_acumulado_produto.get(item["chave"], 0.0)
+        # "Alto giro" = Grupo 1 pelo corte de receita ATUAL — recalculado
+        # aqui (não só na primeira vez que o CSV carrega) pra não desalinhar
+        # dos checkboxes quando o corte muda (ex.: ao carregar uma
+        # configuração salva com um corte de produtos diferente).
+        self.estado_produtos = {item["chave"]: item["grupo"] == "Grupo 1" for item in self.dados_produtos}
 
         nomes_grupos_clientes = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais", "Balcão", "Excluído"]
         if hasattr(self, "combo_grupo_clientes"):

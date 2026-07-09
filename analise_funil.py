@@ -329,13 +329,21 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
         if quedas_seguidas >= periodos_queda_consecutiva:
             janela = grupo.tail(quedas_seguidas + 1)
             media_queda_pct = -grupo["Variacao_Percentual"].tail(quedas_seguidas).mean()
+            receita_anterior = janela["Receita"].iloc[0]
+            receita_atual = grupo["Receita"].iloc[-1]
+            qtd_anterior = janela["QTD"].iloc[0]
+            qtd_atual = grupo["QTD"].iloc[-1]
             alertas.append({
                 "descricao": produto,
                 "Períodos Consecutivos em Queda": quedas_seguidas,
                 "Período Anterior à Queda": _formatar_rotulo_periodo(janela["Periodo"].iloc[0], granularidade),
-                "Receita Precedente à Queda": janela["Receita"].iloc[0],
+                "Receita Precedente à Queda": receita_anterior,
+                "Qtd Precedente à Queda": qtd_anterior,
+                "Ticket Médio Precedente à Queda": (receita_anterior / qtd_anterior) if qtd_anterior > 0 else float("nan"),
                 "Período Atual": _formatar_rotulo_periodo(grupo["Periodo"].iloc[-1], granularidade),
-                "Receita Atual": grupo["Receita"].iloc[-1],
+                "Receita Atual": receita_atual,
+                "Qtd Atual": qtd_atual,
+                "Ticket Médio Atual": (receita_atual / qtd_atual) if qtd_atual > 0 else float("nan"),
                 "% Média de Queda": media_queda_pct,
             })
 

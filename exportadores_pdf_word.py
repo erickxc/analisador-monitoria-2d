@@ -47,7 +47,7 @@ def _formatar_numero_br(valor):
     return texto
 
 
-def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa=""):
+def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa="", descricao_analise=None):
     import pandas as pd
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import cm
@@ -60,6 +60,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     )
 
     colunas_moeda_por_analise = colunas_moeda_por_analise or {}
+    descricao_analise = descricao_analise or {}
     cor_marca = colors.HexColor(COR_MARCA)
     cor_marca_clara = colors.HexColor(COR_MARCA_CLARA)
     cor_texto_secundario = colors.HexColor(COR_TEXTO_SECUNDARIO)
@@ -129,6 +130,10 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     estilo_vazio = ParagraphStyle(
         "SemDados", parent=estilos["Normal"], fontName="Helvetica-Oblique",
         fontSize=9.5, textColor=cor_texto_secundario,
+    )
+    estilo_descricao_secao = ParagraphStyle(
+        "DescricaoSecao", parent=estilos["Normal"], fontName="Helvetica-Oblique",
+        fontSize=9, textColor=cor_texto_secundario, spaceBefore=2, spaceAfter=6,
     )
     # Células de tabela: Paragraph (não string crua) para quebrar linha —
     # sem isso, cabeçalhos longos ("Períodos Consecutivos em Queda") não
@@ -223,13 +228,14 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     for granularidade, analises in resultados_analise.items():
         for chave, df in analises.items():
             titulo = nomes_analise.get(chave, chave).replace("_", " ")
+            descricao = descricao_analise.get(chave)
 
-            cabecalho_secao = KeepTogether([
-                Paragraph(titulo, estilo_secao),
-                Paragraph(granularidade, estilo_granularidade),
-                Spacer(1, 6),
-                HRFlowable(width="100%", thickness=1.2, color=cor_marca, spaceAfter=10),
-            ])
+            itens_cabecalho = [Paragraph(titulo, estilo_secao), Paragraph(granularidade, estilo_granularidade)]
+            if descricao:
+                itens_cabecalho.append(Paragraph(descricao, estilo_descricao_secao))
+            itens_cabecalho.append(Spacer(1, 6))
+            itens_cabecalho.append(HRFlowable(width="100%", thickness=1.2, color=cor_marca, spaceAfter=10))
+            cabecalho_secao = KeepTogether(itens_cabecalho)
             elementos.append(cabecalho_secao)
 
             if df is None or df.empty:
@@ -308,13 +314,14 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     doc.build(elementos, onFirstPage=lambda c, d: None, onLaterPages=_cabecalho_rodape)
 
 
-def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa=""):
+def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa="", descricao_analise=None):
     import docx
     from docx.shared import Cm, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     import pandas as pd
 
     colunas_moeda_por_analise = colunas_moeda_por_analise or {}
+    descricao_analise = descricao_analise or {}
     cor_marca = RGBColor(0x1F, 0x4E, 0x78)
     cor_texto_secundario = RGBColor(0x6B, 0x72, 0x80)
 
@@ -359,6 +366,13 @@ def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, no
             subtitulo_secao = documento.add_paragraph(granularidade)
             subtitulo_secao.runs[0].font.color.rgb = cor_texto_secundario
             subtitulo_secao.runs[0].font.size = Pt(9.5)
+
+            descricao = descricao_analise.get(chave)
+            if descricao:
+                p_descricao = documento.add_paragraph(descricao)
+                p_descricao.runs[0].italic = True
+                p_descricao.runs[0].font.color.rgb = cor_texto_secundario
+                p_descricao.runs[0].font.size = Pt(9)
 
             if df is None or df.empty:
                 p = documento.add_paragraph("Sem dados para esta análise/granularidade.")

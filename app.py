@@ -1588,12 +1588,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 exportadores_pdf_word.exportar_relatorio_pdf(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
+                    descricao_analise=DESCRICAO_ANALISE,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
+                    descricao_analise=DESCRICAO_ANALISE,
                 )
         except Exception as exc:
             self.logger.exception(f"Falha ao exportar {formato}")
@@ -1668,23 +1670,36 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 # Exportação para Excel
 # ---------------------------------------------------------------------------
 
-def _ajustar_largura_colunas(planilha):
+def _ajustar_largura_colunas(planilha, ignorar_linhas=None):
+    ignorar_linhas = ignorar_linhas or set()
     for coluna in planilha.columns:
         maior_comprimento = 0
         letra_coluna = get_column_letter(coluna[0].column)
         for celula in coluna:
+            if celula.row in ignorar_linhas:
+                continue
             valor = str(celula.value) if celula.value is not None else ""
             maior_comprimento = max(maior_comprimento, len(valor))
         planilha.column_dimensions[letra_coluna].width = min(maior_comprimento + 2, 45)
 
 
-def _formatar_cabecalho(planilha):
+def _formatar_cabecalho(planilha, linha=1):
     preenchimento = PatternFill(start_color=COR_CABECALHO, end_color=COR_CABECALHO, fill_type="solid")
     fonte = Font(color="FFFFFF", bold=True)
-    for celula in planilha[1]:
+    for celula in planilha[linha]:
         celula.fill = preenchimento
         celula.font = fonte
         celula.alignment = Alignment(horizontal="center")
+
+
+def _escrever_descricao(planilha, descricao, n_colunas):
+    """Linha de descrição (metodologia em 1-2 linhas) acima do cabeçalho da tabela, mesclada por toda a largura."""
+    planilha.append([descricao])
+    planilha.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(n_colunas, 1))
+    celula = planilha.cell(row=1, column=1)
+    celula.font = Font(italic=True, color=COR_CABECALHO)
+    celula.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    planilha.row_dimensions[1].height = 28
 
 
 def _inserir_logo(planilha, coluna_ancora, linha_ancora=1, altura_pixels=34):
@@ -1711,7 +1726,7 @@ def _eh_coluna_percentual(nome_coluna):
     return "%" in nome or "percentual" in nome or "pct" in nome
 
 
-def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
+def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None, descricao=None):
     if nome_aba in workbook.sheetnames:
         planilha = workbook[nome_aba]
     else:
@@ -1720,6 +1735,10 @@ def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
     colunas_moeda = colunas_moeda or []
     df_para_exportar = df.reset_index() if df.index.name or isinstance(df.index, pd.MultiIndex) else df
     colunas_percentual = [c for c in df_para_exportar.columns if _eh_coluna_percentual(c)]
+
+    if descricao:
+        _escrever_descricao(planilha, descricao, len(df_para_exportar.columns))
+    linha_cabecalho = planilha.max_row + 1
 
     planilha.append(list(map(str, df_para_exportar.columns)))
     for _, linha in df_para_exportar.iterrows():
@@ -1735,14 +1754,14 @@ def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
 
     for indice_coluna, nome_coluna in enumerate(df_para_exportar.columns, start=1):
         if nome_coluna in colunas_moeda:
-            for linha in range(2, planilha.max_row + 1):
+            for linha in range(linha_cabecalho + 1, planilha.max_row + 1):
                 planilha.cell(row=linha, column=indice_coluna).number_format = 'R$ #,##0.00'
         elif nome_coluna in colunas_percentual:
-            for linha in range(2, planilha.max_row + 1):
+            for linha in range(linha_cabecalho + 1, planilha.max_row + 1):
                 planilha.cell(row=linha, column=indice_coluna).number_format = '0.00%'
 
-    _formatar_cabecalho(planilha)
-    _ajustar_largura_colunas(planilha)
+    _formatar_cabecalho(planilha, linha=linha_cabecalho)
+    _ajustar_largura_colunas(planilha, ignorar_linhas={1} if descricao else None)
     _inserir_logo(planilha, coluna_ancora=len(df_para_exportar.columns) + 2)
     return planilha
 
@@ -1809,6 +1828,28 @@ NOMES_ANALISE = {
     "impacto_financeiro_churn": "Impacto_Financeiro_Churn",
 }
 
+# Descrição curta (metodologia em 1-2 linhas) de cada relatório — único
+# lugar mantido, reaproveitado pelos três exportadores (Excel/PDF/Word) pra
+# não desalinhar entre formatos conforme a lógica muda.
+DESCRICAO_ANALISE = {
+    "top_produtos": "Top 20 produtos por receita, somando toda a base carregada — não varia por granularidade.",
+    "top_fabricantes": "Top 20 fabricantes por receita, somando toda a base carregada — não varia por granularidade.",
+    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida.",
+    "evolucao_produtos": "Receita e quantidade por produto ao longo do tempo, ordenado pela tendência (média dos últimos 3 períodos vs. dos 3 primeiros).",
+    "alertas_queda": "Produtos com queda de receita que persiste até o período mais recente — não um histórico antigo já recuperado. Ordenado pelo maior impacto financeiro (Queda em R$).",
+    "erosao_clientes": "Clientes cuja compra de um produto caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
+    "abc": "Segmentação de clientes por receita em faixas (Grupo 1/2/3/Demais), com os 5 clientes de maior receita por faixa e período.",
+    "abc_produtos": "Segmentação de produtos por representatividade de receita (Grupo 1 = top X% da receita).",
+    "migracao_abc": "Clientes que subiram ou desceram de faixa entre períodos consecutivos, com causa provável quando identificável com folga.",
+    "migracao_resumo": "Quantidade de clientes que subiram vs. desceram de faixa, por transição de período.",
+    "migracao_score_clientes": "Placar acumulado por cliente em todo o histórico de migrações entre faixas (+3 por subida, -2 por queda).",
+    "produtos_em_alta": "Top 10 produtos com maior alta de receita entre os dois períodos mais recentes.",
+    "produtos_em_queda": "Top 10 produtos com maior queda de receita entre os dois períodos mais recentes.",
+    "clientes_queda_qtd": "Clientes com maior queda de quantidade comprada entre os dois períodos mais recentes.",
+    "correlacao_produto_cliente": "Eventos de erosão classificados por padrão: abandono de categoria, fim de ciclo ou ruptura estratégica.",
+    "impacto_financeiro_churn": "KPIs agregados do impacto financeiro da erosão de clientes: maior retração individual, receita total sob risco e variação global de receita.",
+}
+
 COLUNAS_MOEDA_POR_ANALISE = {
     "top_produtos": ["Receita"],
     "top_fabricantes": ["Receita"],
@@ -1847,7 +1888,10 @@ def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_perso
                 planilha = workbook.create_sheet(nome_aba)
                 planilha.append(["Sem dados para esta análise/granularidade."])
                 continue
-            _escrever_dataframe(workbook, nome_aba, df_analise, COLUNAS_MOEDA_POR_ANALISE.get(chave_analise))
+            _escrever_dataframe(
+                workbook, nome_aba, df_analise, COLUNAS_MOEDA_POR_ANALISE.get(chave_analise),
+                descricao=DESCRICAO_ANALISE.get(chave_analise),
+            )
 
     if relatorios_personalizados:
         for nome_relatorio, tabela in relatorios_personalizados.items():

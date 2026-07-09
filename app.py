@@ -1680,6 +1680,16 @@ def _inserir_logo(planilha, coluna_ancora, linha_ancora=1, altura_pixels=34):
         pass  # ausência da logo não deve impedir a geração do relatório
 
 
+def _eh_coluna_percentual(nome_coluna):
+    """
+    Detecta coluna de percentual pelo nome (Percentual_*, *_Pct, "% ..."),
+    sem precisar de uma lista mantida à parte por análise — cobre também as
+    colunas dos Relatórios Personalizados, que o usuário monta livremente.
+    """
+    nome = str(nome_coluna).lower()
+    return "%" in nome or "percentual" in nome or "pct" in nome
+
+
 def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
     if nome_aba in workbook.sheetnames:
         planilha = workbook[nome_aba]
@@ -1688,15 +1698,27 @@ def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
 
     colunas_moeda = colunas_moeda or []
     df_para_exportar = df.reset_index() if df.index.name or isinstance(df.index, pd.MultiIndex) else df
+    colunas_percentual = [c for c in df_para_exportar.columns if _eh_coluna_percentual(c)]
 
     planilha.append(list(map(str, df_para_exportar.columns)))
     for _, linha in df_para_exportar.iterrows():
-        planilha.append(list(linha))
+        valores = list(linha)
+        # O motor de análise guarda percentual como número "cru" (8.3 = 8,3%).
+        # O formato nativo de % do Excel multiplica por 100 na exibição, então
+        # o valor gravado precisa ser a fração (0.083) — sem isso, a célula
+        # mostra "830%" em vez de "8,30%" quando formatada como percentual.
+        for indice, nome_coluna in enumerate(df_para_exportar.columns):
+            if nome_coluna in colunas_percentual and pd.notnull(valores[indice]):
+                valores[indice] = valores[indice] / 100
+        planilha.append(valores)
 
     for indice_coluna, nome_coluna in enumerate(df_para_exportar.columns, start=1):
         if nome_coluna in colunas_moeda:
             for linha in range(2, planilha.max_row + 1):
                 planilha.cell(row=linha, column=indice_coluna).number_format = 'R$ #,##0.00'
+        elif nome_coluna in colunas_percentual:
+            for linha in range(2, planilha.max_row + 1):
+                planilha.cell(row=linha, column=indice_coluna).number_format = '0.00%'
 
     _formatar_cabecalho(planilha)
     _ajustar_largura_colunas(planilha)
@@ -1771,7 +1793,7 @@ COLUNAS_MOEDA_POR_ANALISE = {
     "top_fabricantes": ["Receita"],
     "poder_compra_clientes": ["Poder_De_Compra"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
-    "alertas_queda": ["Receita_Ultimo_Periodo", "Receita_Primeiro_Periodo"],
+    "alertas_queda": ["Receita Atual", "Receita Precedente à Queda"],
     "erosao_clientes": ["Receita", "Receita_Periodo_Anterior", "Reducao_Receita"],
     "abc": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "abc_produtos": ["Receita", "Renuncia", "Renuncia_Acumulada"],

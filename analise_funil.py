@@ -1357,9 +1357,8 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
         erosao = None
         if precisa_erosao:
             logar(f"[{granularidade}] Calculando erosão de clientes por produto...")
-            produtos_em_queda = alertas["descricao"].tolist() if alertas is not None and not alertas.empty else None
             erosao = erosao_clientes_por_produto(
-                df_periodo, produtos_alvo=produtos_em_queda,
+                df_periodo,
                 reducao_minima_percentual=reducao_minima_erosao,
                 queda_minima_reais=queda_minima_erosao_reais,
             )

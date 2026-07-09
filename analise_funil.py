@@ -469,8 +469,13 @@ def erosao_clientes_por_produto(df, granularidade="Mensal", produtos_alvo=None, 
     erosao["QTD_Periodo_Anterior"] = pivot_qtd.get(periodo_anterior, 0).values
     erosao["Periodo"] = periodo_atual
 
+    # Receita atual negativa (devolução/estorno que superou a venda do
+    # período) não é uma redução de compra no sentido normal — o percentual
+    # de queda passaria de 100% (ex.: caiu de R$1.129 para -R$360 = "134% de
+    # redução", sem leitura de negócio). Esses casos ficam fora do relatório.
     erosao = erosao[
-        (erosao["Receita_Periodo_Anterior"] > 0) & (erosao["Receita"] < erosao["Receita_Periodo_Anterior"])
+        (erosao["Receita_Periodo_Anterior"] > 0) & (erosao["Receita"] >= 0)
+        & (erosao["Receita"] < erosao["Receita_Periodo_Anterior"])
     ].copy()
 
     erosao["Reducao_Receita"] = erosao["Receita_Periodo_Anterior"] - erosao["Receita"]

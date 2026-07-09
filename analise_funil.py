@@ -271,7 +271,7 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
 
     top_n: se informado, mantém só os N produtos com maior tendência em
     evolucao_df (todos os períodos desses produtos) e as N linhas com maior
-    "Períodos Consecutivos em Queda" em alertas_df. None = todos os produtos.
+    "Queda em R$" em alertas_df. None = todos os produtos.
 
     Retorna (evolucao_df, alertas_df):
       - evolucao_df: uma linha por (produto, período), ordenada por tendência
@@ -283,8 +283,14 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
         um histórico antigo já recuperado). "Receita Precedente à Queda"/
         "Receita Atual" se referem à janela dessa sequência (o período-base
         antes da primeira queda até o último período), não aos extremos de
-        todo o histórico do produto. "% Média de Queda" é a média das
-        variações percentuais dentro dessa janela (magnitude positiva).
+        todo o histórico do produto — o período atual em si não aparece
+        como coluna porque é sempre o mesmo valor em todas as linhas (o
+        último período disponível). Ordenado por "Queda em R$" (Receita
+        Precedente à Queda − Receita Atual) descendente — prioriza impacto
+        financeiro, não duração da sequência: um produto com R$50.000 de
+        queda em 2 períodos é mais crítico que um com R$200 de queda em 5.
+        "% Média de Queda" é a média das variações percentuais dentro dessa
+        janela (magnitude positiva).
     """
     col_periodo = COLUNA_PERIODO[granularidade]
     periodos_ordenados = _ordenar_periodos(df[col_periodo].unique(), granularidade)
@@ -329,15 +335,17 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
         if quedas_seguidas >= periodos_queda_consecutiva:
             janela = grupo.tail(quedas_seguidas + 1)
             media_queda_pct = -grupo["Variacao_Percentual"].tail(quedas_seguidas).mean()
+            receita_anterior = janela["Receita"].iloc[0]
+            receita_atual = grupo["Receita"].iloc[-1]
             alertas.append({
                 "descricao": produto,
                 "Períodos Consecutivos em Queda": quedas_seguidas,
                 "Período Anterior à Queda": _formatar_rotulo_periodo(janela["Periodo"].iloc[0], granularidade),
-                "Receita Precedente à Queda": janela["Receita"].iloc[0],
+                "Receita Precedente à Queda": receita_anterior,
                 "Qtd Precedente à Queda": janela["QTD"].iloc[0],
-                "Período Atual": _formatar_rotulo_periodo(grupo["Periodo"].iloc[-1], granularidade),
-                "Receita Atual": grupo["Receita"].iloc[-1],
+                "Receita Atual": receita_atual,
                 "Qtd Atual": grupo["QTD"].iloc[-1],
+                "Queda em R$": receita_anterior - receita_atual,
                 "% Média de Queda": media_queda_pct,
             })
 
@@ -357,7 +365,7 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
 
     alertas_df = pd.DataFrame(alertas)
     if not alertas_df.empty:
-        alertas_df.sort_values("Períodos Consecutivos em Queda", ascending=False, inplace=True)
+        alertas_df.sort_values("Queda em R$", ascending=False, inplace=True)
         if top_n is not None:
             alertas_df = alertas_df.head(top_n)
         alertas_df.reset_index(drop=True, inplace=True)

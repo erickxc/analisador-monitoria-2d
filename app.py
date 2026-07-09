@@ -1814,7 +1814,7 @@ COLUNAS_MOEDA_POR_ANALISE = {
     "top_fabricantes": ["Receita"],
     "poder_compra_clientes": ["Poder_De_Compra"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
-    "alertas_queda": ["Receita Atual", "Receita Precedente à Queda"],
+    "alertas_queda": ["Receita Atual", "Receita Precedente à Queda", "Queda em R$"],
     "erosao_clientes": ["Receita no Pico", "Receita Atual", "Queda em R$"],
     "abc": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "abc_produtos": ["Receita", "Renuncia", "Renuncia_Acumulada"],

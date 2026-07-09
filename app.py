@@ -157,7 +157,7 @@ CATALOGO_RELATORIOS = [
     ("Tendências e Alertas", [
         ("evolucao_produtos", "Tendência de Produtos"),
         ("alertas_queda", "Alertas de Queda Consecutiva"),
-        ("erosao_clientes", "Erosão de Clientes por Produto"),
+        ("erosao_clientes", "Executivo: Erosão de Clientes por Produto"),
     ]),
     ("Boletins", [
         ("produtos_em_alta", "Boletim: Produtos em Alta"),
@@ -1794,7 +1794,7 @@ COLUNAS_MOEDA_POR_ANALISE = {
     "poder_compra_clientes": ["Poder_De_Compra"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
     "alertas_queda": ["Receita Atual", "Receita Precedente à Queda"],
-    "erosao_clientes": ["Receita", "Receita_Periodo_Anterior", "Reducao_Receita"],
+    "erosao_clientes": ["Receita no Pico", "Receita Atual", "Queda em R$"],
     "abc": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "abc_produtos": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "migracao_abc": [],

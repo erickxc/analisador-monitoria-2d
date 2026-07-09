@@ -145,21 +145,17 @@ COR_ACCENT = f"#{COR_CABECALHO}"  # mesma cor de destaque usada nos cabeçalhos 
 # por categoria para facilitar a leitura. Cada item mapeia um título de negócio
 # para as chaves internas já calculadas por analise_funil.gerar_analises_completas.
 CATALOGO_RELATORIOS = [
-    ("Vendas", [
+    ("Relatórios Gerais", [
         ("top_fabricantes", "Venda por Fabricante (Top Fabricantes)"),
         ("top_produtos", "Venda por Produto (Top Produtos)"),
-    ]),
-    ("Segmentação e Poder de Compra", [
+        ("evolucao_produtos", "Tendência de Produtos"),
         ("abc", "Faturamento e Segmentação de Clientes (ABC)"),
-        ("poder_compra_clientes", "Poder de Compra por Cliente (3 maiores meses)"),
         ("migracao_abc", "Migração de Grupo (inclui resumo e score por cliente)"),
     ]),
-    ("Tendências e Alertas", [
-        ("evolucao_produtos", "Tendência de Produtos"),
+    ("Relatórios Gerenciais", [
         ("alertas_queda", "Alertas de Queda Consecutiva"),
-        ("erosao_clientes", "Executivo: Erosão de Clientes por Produto"),
-    ]),
-    ("Boletins", [
+        ("erosao_clientes", "Erosão de Clientes por Produto"),
+        ("poder_compra_clientes", "Poder de Compra por Cliente (3 maiores meses)"),
         ("produtos_em_alta", "Boletim: Produtos em Alta"),
         ("produtos_em_queda", "Boletim: Produtos em Queda"),
         ("clientes_queda_qtd", "Boletim: Clientes em Queda de Quantidade"),

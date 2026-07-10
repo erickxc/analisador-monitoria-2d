@@ -145,21 +145,18 @@ COR_ACCENT = f"#{COR_CABECALHO}"  # mesma cor de destaque usada nos cabeçalhos 
 # por categoria para facilitar a leitura. Cada item mapeia um título de negócio
 # para as chaves internas já calculadas por analise_funil.gerar_analises_completas.
 CATALOGO_RELATORIOS = [
-    ("Vendas", [
-        ("top_fabricantes", "Venda por Fabricante (Top Fabricantes)"),
+    ("Relatórios Gerais", [
         ("top_produtos", "Venda por Produto (Top Produtos)"),
-    ]),
-    ("Segmentação e Poder de Compra", [
+        ("evolucao_produtos", "Tendência de Produtos"),
         ("abc", "Faturamento e Segmentação de Clientes (ABC)"),
-        ("poder_compra_clientes", "Poder de Compra por Cliente (3 maiores meses)"),
         ("migracao_abc", "Migração de Grupo (inclui resumo e score por cliente)"),
     ]),
-    ("Tendências e Alertas", [
-        ("evolucao_produtos", "Tendência de Produtos"),
+    ("Relatórios Gerenciais", [
+        ("alto_giro", "Alto Giro"),
         ("alertas_queda", "Alertas de Queda Consecutiva"),
+        ("erosao_geral", "Erosão de Clientes (Geral)"),
         ("erosao_clientes", "Erosão de Clientes por Produto"),
-    ]),
-    ("Boletins", [
+        ("poder_compra_clientes", "Poder de Compra por Cliente (3 maiores meses)"),
         ("produtos_em_alta", "Boletim: Produtos em Alta"),
         ("produtos_em_queda", "Boletim: Produtos em Queda"),
         ("clientes_queda_qtd", "Boletim: Clientes em Queda de Quantidade"),
@@ -208,6 +205,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.relatorios_personalizados = {}
         self.estado_clientes = {}   # cliente -> True se EXCLUÍDO
         self.estado_produtos = {}   # produto -> True se CONSIDERADO
+        self._produtos_manual = set()  # produtos com "Considerar?" alterado à mão — não são resincronizados com o Grupo 1
+        self._caminho_csv_atual = None  # chave da configuração automática (ver _salvar/_carregar_configuracao_automatica)
         self.thread_em_execucao = False
         self._thread_geracao = None
 
@@ -689,8 +688,28 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.entrada_reducao_minima_erosao = ttk.Entry(bloco_evolucao, width=8)
         self.entrada_reducao_minima_erosao.insert(0, "50")
         self.entrada_reducao_minima_erosao.grid(row=4, column=1, sticky="w", padx=6, pady=(10, 4))
-        ttk.Label(bloco_evolucao, text="só compara os 2 períodos mais recentes", foreground="gray", font=("Segoe UI", 8)).grid(
+        ttk.Label(bloco_evolucao, text="compara o último mês contra o pico histórico do cliente+produto", foreground="gray", font=("Segoe UI", 8)).grid(
             row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
+        )
+
+        ttk.Label(bloco_evolucao, text="Queda mínima em R$ p/ alerta:", width=LARGURA_ROTULO, anchor="w").grid(
+            row=6, column=0, sticky="w", padx=6, pady=(0, 4)
+        )
+        self.entrada_queda_minima_alerta = ttk.Entry(bloco_evolucao, width=8)
+        self.entrada_queda_minima_alerta.insert(0, "3000")
+        self.entrada_queda_minima_alerta.grid(row=6, column=1, sticky="w", padx=6, pady=(0, 4))
+        ttk.Label(bloco_evolucao, text="ignora quedas pequenas, sem relevância financeira", foreground="gray", font=("Segoe UI", 8)).grid(
+            row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
+        )
+
+        ttk.Label(bloco_evolucao, text="Queda mínima em R$ p/ erosão:", width=LARGURA_ROTULO, anchor="w").grid(
+            row=8, column=0, sticky="w", padx=6, pady=(0, 4)
+        )
+        self.entrada_queda_minima_erosao = ttk.Entry(bloco_evolucao, width=8)
+        self.entrada_queda_minima_erosao.insert(0, "3000")
+        self.entrada_queda_minima_erosao.grid(row=8, column=1, sticky="w", padx=6, pady=(0, 4))
+        ttk.Label(bloco_evolucao, text="além do % — os dois pisos precisam ser atingidos juntos", foreground="gray", font=("Segoe UI", 8)).grid(
+            row=9, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
         )
 
         # --- Bloco 3: Alertas e granularidade ------------------------------
@@ -819,6 +838,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         novo_valor = not dicionario_estado.get(linha, False)
         dicionario_estado[linha] = novo_valor
+        if dicionario_estado is self.estado_produtos:
+            # Marcado à mão — não é mais resincronizado com o Grupo 1 em
+            # _recalcular_classificacoes(), senão o clique seria desfeito na
+            # próxima vez que o corte de produtos for recalculado.
+            self._produtos_manual.add(linha)
         valores = list(arvore.item(linha, "values"))
         valores[0] = "☑" if novo_valor else "☐"
         arvore.item(linha, values=valores)
@@ -828,6 +852,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         """Destaca visualmente o botão de prévia quando clientes/produtos mudam e a contagem fica desatualizada."""
         if hasattr(self, "botao_atualizar_preview"):
             self.botao_atualizar_preview.config(text="⚠ Atualizar prévia (parâmetros alterados)", style="Accent.TButton")
+        self._salvar_configuracao_automatica()
 
     # ------------------------------------------------------------------
     # Carregamento e limpeza do CSV
@@ -860,10 +885,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         self.progress.stop()
 
+        self._caminho_csv_atual = os.path.abspath(caminho)
         self.label_arquivo.config(text=os.path.basename(caminho))
         self.botao_limpar_base.config(state="normal")
         self._popular_lista_clientes()
         self._popular_lista_produtos()
+        self._carregar_configuracao_automatica()
         self._registrar_log(f"CSV carregado com sucesso: {len(self.df)} linhas, "
                              f"{self.df['Cliente'].nunique()} clientes, {self.df['descricao'].nunique()} produtos.")
         self._definir_status(f"CSV carregado: {len(self.df)} linhas.")
@@ -877,6 +904,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.resultados_analise = None
         self.estado_clientes = {}
         self.estado_produtos = {}
+        self._produtos_manual = set()
+        self._caminho_csv_atual = None
         self.dados_clientes = []
         self.dados_produtos = []
 
@@ -958,6 +987,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         produtos = sorted(p for p in self.df["descricao"].unique() if p != af.DESCRICAO_NAO_HARMONIZADA)
 
         self.dados_produtos = []
+        self._produtos_manual = set()  # csv novo — nenhuma escolha manual ainda
         if qtd_nao_harmonizados > 0:
             rotulo = f"⚠ {af.DESCRICAO_NAO_HARMONIZADA} ({qtd_nao_harmonizados} lançamentos sem descrição)"
             self.dados_produtos.append({"chave": af.DESCRICAO_NAO_HARMONIZADA, "rotulo": rotulo, "grupo": "-", "freq_simples": 0.0, "freq_acumulado": 0.0})
@@ -966,7 +996,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             for produto in produtos
         )
 
-        self.estado_produtos = {item["chave"]: True for item in self.dados_produtos}
         self._ordem_produtos = False
         self._recalcular_classificacoes()
 
@@ -1030,18 +1059,75 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     # Salvar/carregar configuração da análise (parâmetros + exclusões) em JSON
     # ------------------------------------------------------------------
 
+    def _construir_configuracao_atual(self):
+        return {
+            "corte_produtos": self.entrada_corte_produtos.get(),
+            "cortes_grupo": [entrada.get() for entrada in self.entradas_corte_grupo],
+            "max_por_grupo": self.entrada_max_por_grupo.get(),
+            "periodos_queda": self.entrada_periodos_queda.get(),
+            "granularidade": self.var_granularidade.get(),
+            "clientes_excluidos": self._clientes_excluidos(),
+            "produtos_excluidos": self._produtos_excluidos(),
+            "formato_exportacao": getattr(self, "var_formato_exportacao", None) and self.var_formato_exportacao.get(),
+        }
+
+    def _caminho_configuracao_automatica(self):
+        return recursos.caminho_dados_locais("config_automatica.json")
+
+    def _ler_configuracoes_automaticas(self):
+        """Todas as configurações automáticas salvas, por CSV (ver _salvar_configuracao_automatica). {} se o arquivo não existir/estiver corrompido."""
+        caminho = self._caminho_configuracao_automatica()
+        if not os.path.exists(caminho):
+            return {}
+        try:
+            with open(caminho, "r", encoding="utf-8") as arquivo:
+                return json.load(arquivo)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _salvar_configuracao_automatica(self):
+        """
+        Persiste silenciosamente (sem diálogo) os parâmetros e exclusões
+        atuais a cada mudança — sem isso, desmarcar um produto/cliente só
+        vale pra sessão atual: fechar e reabrir o programa (ou só recarregar
+        o CSV) volta tudo ao padrão automático (Grupo 1), obrigando a
+        desmarcar de novo toda vez. Chamada de _marcar_configuracao_alterada.
+        Diferente de "Salvar configuração" (ação explícita do usuário, para
+        um arquivo escolhido por ele) — este arquivo é interno, recarregado
+        sozinho em _selecionar_csv.
+
+        Guardado por CSV (caminho absoluto como chave) num único arquivo —
+        sem isso, a exclusão de produtos de uma base (ex.: gap.base.csv)
+        vazava pra outra base com nomes de produto parecidos (ex.:
+        data.teste.csv), já que os nomes batem mas os produtos "certos"
+        pra cada base são diferentes.
+        """
+        if not self._caminho_csv_atual:
+            return  # nenhum CSV carregado ainda — nada pra chavear
+        try:
+            configuracao = self._construir_configuracao_atual()
+        except AttributeError:
+            return  # interface ainda não terminou de montar — nada a salvar ainda
+        todas = self._ler_configuracoes_automaticas()
+        todas[self._caminho_csv_atual] = configuracao
+        try:
+            with open(self._caminho_configuracao_automatica(), "w", encoding="utf-8") as arquivo:
+                json.dump(todas, arquivo, ensure_ascii=False, indent=2)
+        except OSError:
+            pass  # não impede o uso do programa se não puder gravar
+
+    def _carregar_configuracao_automatica(self):
+        """Restaura silenciosamente a última configuração salva automaticamente para o CSV atual, se existir (ver _salvar_configuracao_automatica)."""
+        if not self._caminho_csv_atual:
+            return
+        configuracao = self._ler_configuracoes_automaticas().get(self._caminho_csv_atual)
+        if configuracao is None:
+            return
+        self._aplicar_configuracao(configuracao)
+
     def _salvar_configuracao_analise(self):
         try:
-            configuracao = {
-                "corte_produtos": self.entrada_corte_produtos.get(),
-                "cortes_grupo": [entrada.get() for entrada in self.entradas_corte_grupo],
-                "max_por_grupo": self.entrada_max_por_grupo.get(),
-                "periodos_queda": self.entrada_periodos_queda.get(),
-                "granularidade": self.var_granularidade.get(),
-                "clientes_excluidos": self._clientes_excluidos(),
-                "produtos_excluidos": self._produtos_excluidos(),
-                "formato_exportacao": getattr(self, "var_formato_exportacao", None) and self.var_formato_exportacao.get(),
-            }
+            configuracao = self._construir_configuracao_atual()
         except AttributeError:
             messagebox.showwarning("Salvar configuração", "A interface ainda não terminou de carregar.")
             return
@@ -1065,6 +1151,17 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             messagebox.showerror("Carregar configuração", f"Não foi possível ler o arquivo:\n{exc}")
             return
 
+        self._aplicar_configuracao(configuracao)
+        self._registrar_log(f"Configuração da análise carregada de: {caminho}")
+        if self.df is not None:
+            messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
+        else:
+            messagebox.showinfo(
+                "Carregar configuração",
+                "Parâmetros carregados. Selecione o CSV para também aplicar clientes/produtos excluídos salvos.",
+            )
+
+    def _aplicar_configuracao(self, configuracao):
         self.entrada_corte_produtos.delete(0, "end")
         self.entrada_corte_produtos.insert(0, configuracao.get("corte_produtos", "80"))
         self._escrever_cortes_grupos(configuracao.get("cortes_grupo", ["30", "50", "60"]))
@@ -1083,19 +1180,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             for cliente in self.estado_clientes:
                 self.estado_clientes[cliente] = cliente in clientes_excluidos_salvos
 
-            produtos_excluidos_salvos = set(configuracao.get("produtos_excluidos", []))
-            for produto in self.estado_produtos:
-                self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
-
+            # _recalcular_classificacoes() já resincroniza "alto giro" com o
+            # Grupo 1 do corte de produtos recém-carregado — precisa rodar
+            # ANTES da lista salva, senão o passo abaixo (explícito) seria
+            # sobrescrito pelo padrão de Grupo 1.
             self._recalcular_classificacoes()
-            messagebox.showinfo("Carregar configuração", "Configuração carregada e aplicada com sucesso.")
-        else:
-            messagebox.showinfo(
-                "Carregar configuração",
-                "Parâmetros carregados. Selecione o CSV para também aplicar clientes/produtos excluídos salvos.",
-            )
 
-        self._registrar_log(f"Configuração da análise carregada de: {caminho}")
+            # None (chave ausente) = configuração salva antes desse recurso
+            # existir — não sobrescreve o padrão (Grupo 1) recém-aplicado.
+            # Lista vazia é uma escolha explícita do usuário (nenhum produto
+            # excluído) e é respeitada normalmente.
+            produtos_excluidos_salvos = configuracao.get("produtos_excluidos")
+            if produtos_excluidos_salvos is not None:
+                produtos_excluidos_salvos = set(produtos_excluidos_salvos)
+                for produto in self.estado_produtos:
+                    self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
+                    self._produtos_manual.add(produto)
 
     # ------------------------------------------------------------------
     # Parâmetros: sugestão e pré-visualização de grupos
@@ -1193,6 +1293,16 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             item["grupo"] = mapa_grupo_produto.get(item["chave"], "-")
             item["freq_simples"] = mapa_freq_simples_produto.get(item["chave"], 0.0)
             item["freq_acumulado"] = mapa_freq_acumulado_produto.get(item["chave"], 0.0)
+        # "Alto giro" = Grupo 1 pelo corte de receita ATUAL — recalculado
+        # aqui (não só na primeira vez que o CSV carrega) pra não desalinhar
+        # dos checkboxes quando o corte muda (ex.: ao carregar uma
+        # configuração salva com um corte de produtos diferente). Produtos
+        # marcados/desmarcados à mão (_produtos_manual) ficam de fora dessa
+        # resincronização — senão um clique do usuário seria desfeito na
+        # próxima reclassificação.
+        for item in self.dados_produtos:
+            if item["chave"] not in self._produtos_manual:
+                self.estado_produtos[item["chave"]] = item["grupo"] == "Grupo 1"
 
         nomes_grupos_clientes = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais", "Balcão", "Excluído"]
         if hasattr(self, "combo_grupo_clientes"):
@@ -1475,6 +1585,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             texto_top_n = self.entrada_top_n_produtos.get().strip()
             top_n_produtos = int(texto_top_n) if texto_top_n else None
             reducao_minima_erosao = float(self.entrada_reducao_minima_erosao.get().replace(",", "."))
+            queda_minima_alerta = float(self.entrada_queda_minima_alerta.get().replace(",", "."))
+            queda_minima_erosao = float(self.entrada_queda_minima_erosao.get().replace(",", "."))
         except ValueError:
             messagebox.showerror("Parâmetros inválidos", "Verifique os campos numéricos em Configurações.")
             return
@@ -1491,6 +1603,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         if not (0 <= reducao_minima_erosao <= 100):
             messagebox.showerror("Parâmetros inválidos", "Redução mínima para erosão deve estar entre 0 e 100.")
+            return
+        if queda_minima_alerta < 0:
+            messagebox.showerror("Parâmetros inválidos", "Queda mínima em R$ para alerta deve ser zero ou positiva.")
+            return
+        if queda_minima_erosao < 0:
+            messagebox.showerror("Parâmetros inválidos", "Queda mínima em R$ para erosão deve ser zero ou positiva.")
             return
 
         df_filtrado = self._dataframe_para_analise()
@@ -1510,7 +1628,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._registrar_log(
             f"Iniciando geração do relatório. Granularidades: {granularidades}. "
             f"Relatórios selecionados: {len(chaves_selecionadas)}. "
-            f"Clientes excluídos: {len(clientes_excluidos)}. Produtos excluídos: {len(produtos_excluidos)}."
+            f"Clientes excluídos: {len(clientes_excluidos)}. Produtos excluídos: {len(self._produtos_excluidos())}."
         )
         self._definir_status("Processando análises em segundo plano...")
 
@@ -1518,14 +1636,16 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             target=self._executar_geracao_em_thread,
             args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
                   periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"]),
-                  not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao),
+                  not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao,
+                  queda_minima_alerta, queda_minima_erosao),
             daemon=True,
         )
         self._thread_geracao.start()
 
     def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
                                      cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao,
-                                     excluir_periodo_atual, top_n_produtos, reducao_minima_erosao):
+                                     excluir_periodo_atual, top_n_produtos, reducao_minima_erosao, queda_minima_alerta,
+                                     queda_minima_erosao):
         try:
             resultados = af.gerar_analises_completas(
                 df_filtrado, granularidades,
@@ -1539,6 +1659,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 excluir_periodo_atual=excluir_periodo_atual,
                 top_n_produtos=top_n_produtos,
                 reducao_minima_erosao=reducao_minima_erosao,
+                queda_minima_alerta=queda_minima_alerta,
+                queda_minima_erosao_reais=queda_minima_erosao,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:
@@ -1592,12 +1714,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 exportadores_pdf_word.exportar_relatorio_pdf(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
+                    descricao_analise=DESCRICAO_ANALISE,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
                     caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
+                    descricao_analise=DESCRICAO_ANALISE,
                 )
         except Exception as exc:
             self.logger.exception(f"Falha ao exportar {formato}")
@@ -1672,23 +1796,36 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 # Exportação para Excel
 # ---------------------------------------------------------------------------
 
-def _ajustar_largura_colunas(planilha):
+def _ajustar_largura_colunas(planilha, ignorar_linhas=None):
+    ignorar_linhas = ignorar_linhas or set()
     for coluna in planilha.columns:
         maior_comprimento = 0
         letra_coluna = get_column_letter(coluna[0].column)
         for celula in coluna:
+            if celula.row in ignorar_linhas:
+                continue
             valor = str(celula.value) if celula.value is not None else ""
             maior_comprimento = max(maior_comprimento, len(valor))
         planilha.column_dimensions[letra_coluna].width = min(maior_comprimento + 2, 45)
 
 
-def _formatar_cabecalho(planilha):
+def _formatar_cabecalho(planilha, linha=1):
     preenchimento = PatternFill(start_color=COR_CABECALHO, end_color=COR_CABECALHO, fill_type="solid")
     fonte = Font(color="FFFFFF", bold=True)
-    for celula in planilha[1]:
+    for celula in planilha[linha]:
         celula.fill = preenchimento
         celula.font = fonte
         celula.alignment = Alignment(horizontal="center")
+
+
+def _escrever_descricao(planilha, descricao, n_colunas):
+    """Linha de descrição (metodologia em 1-2 linhas) acima do cabeçalho da tabela, mesclada por toda a largura."""
+    planilha.append([descricao])
+    planilha.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(n_colunas, 1))
+    celula = planilha.cell(row=1, column=1)
+    celula.font = Font(italic=True, color=COR_CABECALHO)
+    celula.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    planilha.row_dimensions[1].height = 28
 
 
 def _inserir_logo(planilha, coluna_ancora, linha_ancora=1, altura_pixels=34):
@@ -1705,7 +1842,17 @@ def _inserir_logo(planilha, coluna_ancora, linha_ancora=1, altura_pixels=34):
         pass  # ausência da logo não deve impedir a geração do relatório
 
 
-def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
+def _eh_coluna_percentual(nome_coluna):
+    """
+    Detecta coluna de percentual pelo nome (Percentual_*, *_Pct, "% ..."),
+    sem precisar de uma lista mantida à parte por análise — cobre também as
+    colunas dos Relatórios Personalizados, que o usuário monta livremente.
+    """
+    nome = str(nome_coluna).lower()
+    return "%" in nome or "percentual" in nome or "pct" in nome
+
+
+def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None, descricao=None):
     if nome_aba in workbook.sheetnames:
         planilha = workbook[nome_aba]
     else:
@@ -1713,18 +1860,34 @@ def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None):
 
     colunas_moeda = colunas_moeda or []
     df_para_exportar = df.reset_index() if df.index.name or isinstance(df.index, pd.MultiIndex) else df
+    colunas_percentual = [c for c in df_para_exportar.columns if _eh_coluna_percentual(c)]
+
+    if descricao:
+        _escrever_descricao(planilha, descricao, len(df_para_exportar.columns))
+    linha_cabecalho = planilha.max_row + 1
 
     planilha.append(list(map(str, df_para_exportar.columns)))
     for _, linha in df_para_exportar.iterrows():
-        planilha.append(list(linha))
+        valores = list(linha)
+        # O motor de análise guarda percentual como número "cru" (8.3 = 8,3%).
+        # O formato nativo de % do Excel multiplica por 100 na exibição, então
+        # o valor gravado precisa ser a fração (0.083) — sem isso, a célula
+        # mostra "830%" em vez de "8,30%" quando formatada como percentual.
+        for indice, nome_coluna in enumerate(df_para_exportar.columns):
+            if nome_coluna in colunas_percentual and pd.notnull(valores[indice]):
+                valores[indice] = valores[indice] / 100
+        planilha.append(valores)
 
     for indice_coluna, nome_coluna in enumerate(df_para_exportar.columns, start=1):
         if nome_coluna in colunas_moeda:
-            for linha in range(2, planilha.max_row + 1):
+            for linha in range(linha_cabecalho + 1, planilha.max_row + 1):
                 planilha.cell(row=linha, column=indice_coluna).number_format = 'R$ #,##0.00'
+        elif nome_coluna in colunas_percentual:
+            for linha in range(linha_cabecalho + 1, planilha.max_row + 1):
+                planilha.cell(row=linha, column=indice_coluna).number_format = '0.00%'
 
-    _formatar_cabecalho(planilha)
-    _ajustar_largura_colunas(planilha)
+    _formatar_cabecalho(planilha, linha=linha_cabecalho)
+    _ajustar_largura_colunas(planilha, ignorar_linhas={1} if descricao else None)
     _inserir_logo(planilha, coluna_ancora=len(df_para_exportar.columns) + 2)
     return planilha
 
@@ -1774,10 +1937,11 @@ def _criar_capa(workbook, resultados_analise, nome_usuario="", nome_empresa=""):
 
 NOMES_ANALISE = {
     "top_produtos": "Top_Produtos",
-    "top_fabricantes": "Top_Fabricantes",
     "poder_compra_clientes": "Poder_Compra_Clientes",
     "evolucao_produtos": "Evolucao_Produtos",
+    "alto_giro": "Alto_Giro",
     "alertas_queda": "Alertas_Queda",
+    "erosao_geral": "Erosao_Geral",
     "erosao_clientes": "Erosao_Clientes",
     "abc": "ABC_Clientes",
     "abc_produtos": "ABC_Produtos",
@@ -1791,13 +1955,37 @@ NOMES_ANALISE = {
     "impacto_financeiro_churn": "Impacto_Financeiro_Churn",
 }
 
+# Descrição curta (metodologia em 1-2 linhas) de cada relatório — único
+# lugar mantido, reaproveitado pelos três exportadores (Excel/PDF/Word) pra
+# não desalinhar entre formatos conforme a lógica muda.
+DESCRICAO_ANALISE = {
+    "top_produtos": "Top 20 produtos por receita, somando toda a base carregada — não varia por granularidade.",
+    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida.",
+    "evolucao_produtos": "Receita e quantidade por produto ao longo do tempo, ordenado pela tendência (média dos últimos 3 períodos vs. dos 3 primeiros).",
+    "alto_giro": "Status do mês mais recente de cada produto de alto giro: receita, se está em alta ou queda vs. o mês anterior, o cliente que mais comprou e o que mais reduziu a compra. Some/entra sozinho conforme os produtos considerados mudam.",
+    "alertas_queda": "Produtos com queda de receita que persiste até o período mais recente — não um histórico antigo já recuperado. Ordenado pelo maior impacto financeiro (Queda em R$).",
+    "erosao_geral": "Clientes cuja receita total (somando todos os produtos) caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
+    "erosao_clientes": "Clientes cuja compra de um produto caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
+    "abc": "Segmentação de clientes por receita em faixas (Grupo 1/2/3/Demais), com os 5 clientes de maior receita por faixa e período.",
+    "abc_produtos": "Segmentação de produtos por representatividade de receita (Grupo 1 = top X% da receita).",
+    "migracao_abc": "Clientes que subiram ou desceram de faixa entre períodos consecutivos, com causa provável quando identificável com folga.",
+    "migracao_resumo": "Quantidade de clientes que subiram vs. desceram de faixa, por transição de período.",
+    "migracao_score_clientes": "Placar acumulado por cliente em todo o histórico de migrações entre faixas (+3 por subida, -2 por queda).",
+    "produtos_em_alta": "Top 10 produtos com maior alta de receita entre os dois períodos mais recentes.",
+    "produtos_em_queda": "Top 10 produtos com maior queda de receita entre os dois períodos mais recentes.",
+    "clientes_queda_qtd": "Clientes com maior queda de quantidade comprada entre os dois períodos mais recentes.",
+    "correlacao_produto_cliente": "Eventos de erosão classificados por padrão: abandono de categoria, fim de ciclo ou ruptura estratégica.",
+    "impacto_financeiro_churn": "KPIs agregados do impacto financeiro da erosão de clientes: maior retração individual, receita total sob risco e variação global de receita.",
+}
+
 COLUNAS_MOEDA_POR_ANALISE = {
     "top_produtos": ["Receita"],
-    "top_fabricantes": ["Receita"],
-    "poder_compra_clientes": ["Poder_De_Compra"],
+    "poder_compra_clientes": ["Poder_De_Compra", "Receita Média Recente (3 meses)"],
     "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
-    "alertas_queda": ["Receita_Ultimo_Periodo", "Receita_Primeiro_Periodo"],
-    "erosao_clientes": ["Receita", "Receita_Periodo_Anterior", "Reducao_Receita"],
+    "alto_giro": ["Receita Atual"],
+    "alertas_queda": ["Receita Atual", "Receita Precedente à Queda", "Queda em R$"],
+    "erosao_geral": ["Receita no Pico", "Receita Atual", "Queda em R$"],
+    "erosao_clientes": ["Receita no Pico", "Receita Atual", "Queda em R$"],
     "abc": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "abc_produtos": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "migracao_abc": [],
@@ -1829,7 +2017,10 @@ def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_perso
                 planilha = workbook.create_sheet(nome_aba)
                 planilha.append(["Sem dados para esta análise/granularidade."])
                 continue
-            _escrever_dataframe(workbook, nome_aba, df_analise, COLUNAS_MOEDA_POR_ANALISE.get(chave_analise))
+            _escrever_dataframe(
+                workbook, nome_aba, df_analise, COLUNAS_MOEDA_POR_ANALISE.get(chave_analise),
+                descricao=DESCRICAO_ANALISE.get(chave_analise),
+            )
 
     if relatorios_personalizados:
         for nome_relatorio, tabela in relatorios_personalizados.items():

@@ -227,7 +227,12 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     Compara esse potencial contra o desempenho recente (média dos 3 meses-
     calendário mais recentes disponíveis na base, não os "3 melhores" —
     meses sem compra do cliente entram como 0): Receita_Media_Recente e
-    Desempenho_Vs_Potencial_Pct (recente ÷ potencial × 100). Também conta,
+    Desempenho_Vs_Potencial_Pct — a VARIAÇÃO percentual do recente frente
+    ao potencial ((recente - potencial) ÷ potencial × 100), não a razão
+    bruta: 0% = comprando exatamente o potencial, negativo = abaixo,
+    positivo = acima (mesma convenção de "% de Variação" usada no resto do
+    sistema — 100%/104% de razão bruta lia como "quase o dobro", quando o
+    cliente só estava 4% acima do potencial). Também conta,
     dentro desses mesmos 3 meses recentes, quantos tiveram receita ≤ 40% do
     potencial (ou seja, uma queda de 60%+ frente ao que o cliente já
     demonstrou ser capaz de comprar) — Meses_60pct_Abaixo_Potencial.
@@ -276,7 +281,7 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
 
     resultado["Desempenho_Vs_Potencial_Pct"] = np.where(
         resultado["Poder_De_Compra"] > 0,
-        resultado["Receita_Media_Recente"] / resultado["Poder_De_Compra"] * 100,
+        (resultado["Receita_Media_Recente"] - resultado["Poder_De_Compra"]) / resultado["Poder_De_Compra"] * 100,
         np.nan,
     )
 
@@ -1612,7 +1617,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 df_periodo, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
             ).drop(columns=["Percentual_Acumulado"]).rename(columns={
                 "Receita_Media_Recente": "Receita Média Recente (3 meses)",
-                "Desempenho_Vs_Potencial_Pct": "% do Potencial Realizado",
+                "Desempenho_Vs_Potencial_Pct": "% de Variação vs. Potencial",
                 "Meses_60pct_Abaixo_Potencial": "Meses Muito Abaixo do Potencial",
             })
 

@@ -1975,7 +1975,7 @@ NOMES_ANALISE = {
 # não desalinhar entre formatos conforme a lógica muda.
 DESCRICAO_ANALISE = {
     "top_produtos": "Top 20 produtos por receita, somando toda a base carregada — não varia por granularidade.",
-    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida. 'Meses Muito Abaixo do Potencial' conta, dos últimos 3 meses, quantos tiveram receita com queda de 60% ou mais frente a esse potencial.",
+    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida (descarta antes picos isolados/atípicos). '% de Variação vs. Potencial' é a diferença percentual do desempenho recente frente a esse potencial (0% = comprando exatamente o potencial, negativo = abaixo, positivo = acima). 'Meses Muito Abaixo do Potencial' conta, dos últimos 3 meses, quantos tiveram receita com queda de 60% ou mais frente a esse potencial.",
     "evolucao_produtos": "Receita e quantidade por produto ao longo do tempo, ordenado pela tendência (média dos últimos 3 períodos vs. dos 3 primeiros).",
     "alto_giro": "Status do mês mais recente de cada produto de alto giro: receita, se está em alta ou queda vs. o mês anterior, o cliente que mais comprou e o que mais reduziu a compra. Some/entra sozinho conforme os produtos considerados mudam.",
     "alertas_queda": "Produtos com queda de receita que persiste até o período mais recente — não um histórico antigo já recuperado. Ordenado pelo maior impacto financeiro (Queda em R$).",

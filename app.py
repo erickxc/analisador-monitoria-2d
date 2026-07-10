@@ -834,10 +834,10 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.check_somente_alto_giro.pack(fill="x", padx=6, pady=(6, 0), before=frame.winfo_children()[0])
 
         arvore.heading("check", text="Considerar?")
-        arvore.heading("produto", text="Produto", command=self._ordenar_produtos)
+        arvore.heading("produto", text="Produto", command=lambda: self._ordenar_produtos("rotulo"))
         arvore.heading("grupo", text="Grupo")
-        arvore.heading("freq_simples", text="Freq. Simples")
-        arvore.heading("freq_acumulado", text="Freq. Acumulado")
+        arvore.heading("freq_simples", text="Freq. Simples", command=lambda: self._ordenar_produtos("freq_simples"))
+        arvore.heading("freq_acumulado", text="Freq. Acumulado", command=lambda: self._ordenar_produtos("freq_acumulado"))
         arvore.column("check", width=80, anchor="center")
         arvore.column("produto", width=230, anchor="w")
         arvore.column("grupo", width=70, anchor="center")
@@ -1021,7 +1021,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             for produto in produtos
         )
 
-        self._ordem_produtos = False
+        self._ordem_produtos = ("freq_simples", True)  # padrão: mais frequentes primeiro
         self._recalcular_classificacoes()
 
     def _buscar_produtos(self, texto):
@@ -1031,10 +1031,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             self.combo_grupo_produtos.set("Todos")
         self._renderizar_produtos(texto)
 
-    def _ordenar_produtos(self):
-        decrescente = not getattr(self, "_ordem_produtos", False)
-        self._ordem_produtos = decrescente
-        self.dados_produtos.sort(key=lambda item: item["rotulo"].lower(), reverse=decrescente)
+    def _ordenar_produtos(self, campo):
+        campo_atual, decrescente_atual = getattr(self, "_ordem_produtos", (None, True))
+        decrescente = (not decrescente_atual) if campo == campo_atual else True
+        self._ordem_produtos = (campo, decrescente)
+        chave = (lambda item: item["rotulo"].lower()) if campo == "rotulo" else (lambda item: item[campo])
+        self.dados_produtos.sort(key=chave, reverse=decrescente)
         self._renderizar_produtos(self.entrada_busca_produtos.get())
 
     def _renderizar_produtos(self, filtro):
@@ -1318,6 +1320,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             item["grupo"] = mapa_grupo_produto.get(item["chave"], "-")
             item["freq_simples"] = mapa_freq_simples_produto.get(item["chave"], 0.0)
             item["freq_acumulado"] = mapa_freq_acumulado_produto.get(item["chave"], 0.0)
+        # Reaplica o critério de ordenação atual (padrão: mais frequentes
+        # primeiro) agora que freq_simples/freq_acumulado foram recalculados
+        # — sem isso, a lista ficaria na ordem alfabética original até o
+        # usuário clicar manualmente num cabeçalho.
+        campo_ordem, decrescente_ordem = getattr(self, "_ordem_produtos", ("freq_simples", True))
+        chave_ordem = (lambda item: item["rotulo"].lower()) if campo_ordem == "rotulo" else (lambda item: item[campo_ordem])
+        self.dados_produtos.sort(key=chave_ordem, reverse=decrescente_ordem)
         # "Alto giro" = Grupo 1 pelo corte de receita ATUAL — recalculado
         # aqui (não só na primeira vez que o CSV carrega) pra não desalinhar
         # dos checkboxes quando o corte muda (ex.: ao carregar uma

@@ -1094,7 +1094,18 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             "periodos_queda": self.entrada_periodos_queda.get(),
             "granularidade": self.var_granularidade.get(),
             "clientes_excluidos": self._clientes_excluidos(),
-            "produtos_excluidos": self._produtos_excluidos(),
+            # Só os produtos que o usuário de fato clicou (_produtos_manual),
+            # com o estado que ele escolheu — NÃO a lista inteira de
+            # desmarcados (_produtos_excluidos()), que inclui produtos
+            # desmarcados automaticamente só por não serem Grupo 1 no corte
+            # atual. Salvar a lista inteira (formato antigo) fazia TODO
+            # produto voltar marcado como "manual" ao recarregar, travando-o
+            # pra sempre fora da resincronização automática — se o corte de
+            # produtos mudasse depois e ele passasse a ser Grupo 1, o
+            # checkbox nunca marcava sozinho (ver _aplicar_configuracao).
+            "produtos_manual_estado": {
+                produto: self.estado_produtos.get(produto, False) for produto in self._produtos_manual
+            },
             "formato_exportacao": getattr(self, "var_formato_exportacao", None) and self.var_formato_exportacao.get(),
         }
 
@@ -1215,14 +1226,29 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
             # None (chave ausente) = configuração salva antes desse recurso
             # existir — não sobrescreve o padrão (Grupo 1) recém-aplicado.
-            # Lista vazia é uma escolha explícita do usuário (nenhum produto
-            # excluído) e é respeitada normalmente.
-            produtos_excluidos_salvos = configuracao.get("produtos_excluidos")
-            if produtos_excluidos_salvos is not None:
-                produtos_excluidos_salvos = set(produtos_excluidos_salvos)
-                for produto in self.estado_produtos:
-                    self.estado_produtos[produto] = produto not in produtos_excluidos_salvos
-                    self._produtos_manual.add(produto)
+            # Dict vazio é uma escolha explícita do usuário (nenhuma exceção
+            # manual) e é respeitado normalmente.
+            produtos_manual_estado = configuracao.get("produtos_manual_estado")
+            if produtos_manual_estado is not None:
+                for produto, considerado in produtos_manual_estado.items():
+                    if produto in self.estado_produtos:
+                        self.estado_produtos[produto] = considerado
+                        self._produtos_manual.add(produto)
+            else:
+                # Compatibilidade com configurações salvas no formato antigo
+                # ("produtos_excluidos": lista inteira de desmarcados, sem
+                # distinguir escolha manual de resultado automático do corte
+                # de então). Aplica o estado salvo só nesta carga, mas SEM
+                # marcar como manual — assim, na próxima reclassificação
+                # (mudar o corte e clicar "Atualizar", por exemplo), esses
+                # produtos voltam a resincronizar com o Grupo 1 normalmente,
+                # em vez de ficarem travados fora da lista pra sempre.
+                produtos_excluidos_salvos = configuracao.get("produtos_excluidos")
+                if produtos_excluidos_salvos is not None:
+                    produtos_excluidos_salvos = set(produtos_excluidos_salvos)
+                    for produto in produtos_excluidos_salvos:
+                        if produto in self.estado_produtos:
+                            self.estado_produtos[produto] = False
 
     # ------------------------------------------------------------------
     # Parâmetros: sugestão e pré-visualização de grupos

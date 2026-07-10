@@ -7,10 +7,11 @@ instante perceptível, então o usuário vê o que está de fato acontecendo em
 vez de uma barra genérica.
 """
 
+import os
 import tkinter as tk
 from tkinter import ttk
 
-from recursos import CAMINHO_LOGO, NOME_SISTEMA, NOME_EMPRESA
+from recursos import CAMINHO_LOGO, CAMINHO_LOGO_ICO, CAMINHO_LOGO_ICONE, NOME_SISTEMA, NOME_EMPRESA
 
 COR_FUNDO = "#0d0d0d"
 COR_TEXTO_SECUNDARIO = "#b5b5b5"
@@ -32,6 +33,21 @@ def exibir_splash_e_iniciar(etapas_preparacao, funcao_construir_janela_principal
     y = (splash.winfo_screenheight() - altura) // 2
     splash.geometry(f"{largura}x{altura}+{x}+{y}")
     splash.configure(bg=COR_FUNDO)
+
+    # overrideredirect tira a borda/titulo (não tem onde mostrar um ícone
+    # na própria janela), mas a barra de tarefas do Windows ainda usa o
+    # ícone do processo — sem isso, mostra o ícone padrão do Tkinter (uma
+    # pena) enquanto a splash está na tela, antes da janela principal (que
+    # define o ícone certo) abrir.
+    try:
+        if os.path.exists(CAMINHO_LOGO_ICO):
+            splash.iconbitmap(CAMINHO_LOGO_ICO)
+    except tk.TclError:
+        try:
+            splash._icone_janela_ref = tk.PhotoImage(file=CAMINHO_LOGO_ICONE)
+            splash.iconphoto(True, splash._icone_janela_ref)
+        except tk.TclError:
+            pass
 
     try:
         # A logo tem texto preto sobre fundo transparente (pensada para fundo

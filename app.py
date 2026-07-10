@@ -188,7 +188,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def __init__(self):
         super().__init__()
         self.title(TITULO_JANELA)
-        self.geometry("1360x880")
+        self._definir_geometria_janela()
         self._definir_icone_janela()
         sv_ttk.set_theme("light")
         self._aplicar_estilos_customizados()
@@ -253,6 +253,21 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     # ------------------------------------------------------------------
     # Montagem geral
     # ------------------------------------------------------------------
+
+    def _definir_geometria_janela(self):
+        """
+        Tamanho ideal 1360x880, mas nunca maior que a tela disponível —
+        numa tela menor (notebook, resolução baixa, escala de DPI alta), o
+        tamanho fixo anterior cortava a parte de baixo da janela pra fora
+        da área visível, atrás da barra de tarefas do Windows.
+        """
+        largura_ideal, altura_ideal = 1360, 880
+        margem_taskbar = 60
+        largura = min(largura_ideal, self.winfo_screenwidth() - 20)
+        altura = min(altura_ideal, self.winfo_screenheight() - margem_taskbar)
+        x = max((self.winfo_screenwidth() - largura) // 2, 0)
+        y = max((self.winfo_screenheight() - altura) // 2 - 10, 0)
+        self.geometry(f"{largura}x{altura}+{x}+{y}")
 
     def _definir_icone_janela(self):
         try:

@@ -51,4 +51,9 @@ NOVIDADES_POR_VERSAO = {
         "Produtos considerados na análise: lista agora abre ordenada por frequência.",
         "Gráficos: novos tipos (Barras, Linha, Pizza, Histograma, Pirâmide), filtros de período/valor mínimo/fabricante/faixa ABC, exportar para Excel, e corrige 'Vendas por Fabricante' sem opção de colorir por Fabricante.",
     ],
+    "1.6.3": [
+        "Corrige produtos que não resincronizavam com o Grupo 1 ao aumentar o corte de produtos (ficavam travados por uma configuração salva anteriormente).",
+        "Migração de Grupo: nova coluna 'Margem' (Qtd_Subiu - Qtd_Desceu) no resumo por transição de período.",
+        "Migração de Grupo: nova coluna 'Grupo' no placar por cliente, mostrando a faixa ABC mais recente de cada um.",
+    ],
 }

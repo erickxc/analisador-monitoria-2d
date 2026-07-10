@@ -186,13 +186,43 @@ def top_produtos(df, n=20):
     return resultado
 
 
+def _media_top3_sem_outliers(linha_receita_mensal):
+    """
+    Média dos 3 maiores meses-calendário do cliente, descartando antes
+    picos isolados (um mês fora da curva, não uma capacidade sustentada)
+    pelo critério de Tukey: qualquer mês acima de Q3 + 1,5×IQR dos meses
+    ATIVOS do cliente (meses sem compra, valor 0, não entram no cálculo do
+    quartil — ausência de compra não é "mês fraco"). Com menos de 4 meses
+    ativos não há dado suficiente pra um quartil confiável, usa todos.
+
+    Sem isso, um cliente que compra tipicamente ~R$50-90/mês mas teve UM
+    mês de R$1.500 (peça avulsa, pedido atípico) tinha seu "potencial"
+    inflado pra ~R$780 (média bruta dos 3 maiores) — quase 10x o que ele
+    realmente sustenta. Testado contra 4 bases reais: o corte por IQR pega
+    esses picos isolados sem descartar clientes que têm vários meses bons
+    de verdade (nesse caso, a diferença entre o maior mês e os seguintes
+    não é grande o bastante pra passar do limite de Tukey).
+    """
+    valores = linha_receita_mensal[linha_receita_mensal > 0]
+    if len(valores) == 0:
+        return 0.0
+    if len(valores) < 4:
+        return valores.sort_values(ascending=False).head(3).mean()
+    q1, q3 = valores.quantile(0.25), valores.quantile(0.75)
+    limite = q3 + 1.5 * (q3 - q1)
+    sem_outliers = valores[valores <= limite]
+    return sem_outliers.sort_values(ascending=False).head(3).mean()
+
+
 def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False):
     """
     Poder de compra "de pico" de cada cliente: média dos 3 meses-calendário
-    de MAIOR receita (não a média corrida, nem o total agregado) — reflete a
-    capacidade de compra do cliente no seu melhor momento, não o
-    comportamento típico do dia a dia. Sempre por Periodo_Mensal, independente
-    da granularidade escolhida na tela (um "pico" é um conceito mensal).
+    de MAIOR receita, descartando primeiro picos isolados que não refletem
+    capacidade sustentada (ver _media_top3_sem_outliers) — não é a média
+    corrida, nem o total agregado; reflete a capacidade de compra do
+    cliente no seu melhor momento, não o comportamento típico do dia a dia.
+    Sempre por Periodo_Mensal, independente da granularidade escolhida na
+    tela (um "pico" é um conceito mensal).
 
     Compara esse potencial contra o desempenho recente (média dos 3 meses-
     calendário mais recentes disponíveis na base, não os "3 melhores" —
@@ -220,7 +250,7 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     receita_mensal = base.groupby(["Cliente", "Periodo_Mensal"], as_index=False)["Receita"].sum()
     pivot = receita_mensal.pivot(index="Cliente", columns="Periodo_Mensal", values="Receita").fillna(0.0)
 
-    top3_por_cliente = pivot.apply(lambda linha: linha.sort_values(ascending=False).head(3).mean(), axis=1)
+    top3_por_cliente = pivot.apply(_media_top3_sem_outliers, axis=1)
     top3_por_cliente.name = "Poder_De_Compra"
 
     periodos_ordenados = _ordenar_periodos(pivot.columns, "Mensal")

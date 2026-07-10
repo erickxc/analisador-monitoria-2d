@@ -1266,16 +1266,16 @@ def resumo_migracao(migracao_df):
     return resumo[colunas]
 
 
-PONTOS_SUBIU_FAIXA = 3
-PONTOS_DESCEU_FAIXA = -2
+PONTOS_SUBIU_FAIXA = 2
+PONTOS_DESCEU_FAIXA = -3
 
 
 def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
     """
     Score de migração por cliente, acumulado ao longo de TODO o histórico de
-    transições disponível (não só a mais recente): +3 por subida de faixa,
-    -2 por queda. Clientes que só sobem acumulam pontos rápido; quem cai com
-    frequência tende a score negativo.
+    transições disponível (não só a mais recente): +2 por subida de faixa,
+    -3 por queda — queda pesa mais que subida, então clientes que oscilam
+    (sobe e cai) tendem a score negativo, não neutro.
 
     Percentual_Permanencia: das transições de período em que o cliente
     aparece nos dois lados (a mesma base contada por migracao_abc), qual %
@@ -1570,10 +1570,10 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             logar(f"[{granularidade}] Calculando poder de compra agregado dos clientes...")
             analises["poder_compra_clientes"] = poder_compra_agregado(
                 df_periodo, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
-            ).rename(columns={
+            ).drop(columns=["Percentual_Acumulado"]).rename(columns={
                 "Receita_Media_Recente": "Receita Média Recente (3 meses)",
                 "Desempenho_Vs_Potencial_Pct": "% do Potencial Realizado",
-                "Meses_60pct_Abaixo_Potencial": "Meses 60% Abaixo do Potencial",
+                "Meses_60pct_Abaixo_Potencial": "Meses Muito Abaixo do Potencial",
             })
 
         if precisa("abc_produtos"):

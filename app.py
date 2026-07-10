@@ -1975,7 +1975,7 @@ NOMES_ANALISE = {
 # não desalinhar entre formatos conforme a lógica muda.
 DESCRICAO_ANALISE = {
     "top_produtos": "Top 20 produtos por receita, somando toda a base carregada — não varia por granularidade.",
-    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida.",
+    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida. 'Meses Muito Abaixo do Potencial' conta, dos últimos 3 meses, quantos tiveram receita com queda de 60% ou mais frente a esse potencial.",
     "evolucao_produtos": "Receita e quantidade por produto ao longo do tempo, ordenado pela tendência (média dos últimos 3 períodos vs. dos 3 primeiros).",
     "alto_giro": "Status do mês mais recente de cada produto de alto giro: receita, se está em alta ou queda vs. o mês anterior, o cliente que mais comprou e o que mais reduziu a compra. Some/entra sozinho conforme os produtos considerados mudam.",
     "alertas_queda": "Produtos com queda de receita que persiste até o período mais recente — não um histórico antigo já recuperado. Ordenado pelo maior impacto financeiro (Queda em R$).",
@@ -1985,7 +1985,7 @@ DESCRICAO_ANALISE = {
     "abc_produtos": "Segmentação de produtos por representatividade de receita (Grupo 1 = top X% da receita).",
     "migracao_abc": "Clientes que subiram ou desceram de faixa entre períodos consecutivos, com causa provável quando identificável com folga.",
     "migracao_resumo": "Quantidade de clientes que subiram vs. desceram de faixa, por transição de período.",
-    "migracao_score_clientes": "Placar acumulado por cliente em todo o histórico de migrações entre faixas (+3 por subida, -2 por queda).",
+    "migracao_score_clientes": "Placar acumulado por cliente em todo o histórico de migrações entre faixas (+2 por subida, -3 por queda).",
     "produtos_em_alta": "Top 10 produtos com maior alta de receita entre os dois períodos mais recentes.",
     "produtos_em_queda": "Top 10 produtos com maior queda de receita entre os dois períodos mais recentes.",
     "clientes_queda_qtd": "Clientes com maior queda de quantidade comprada entre os dois períodos mais recentes.",

@@ -44,4 +44,11 @@ NOVIDADES_POR_VERSAO = {
         "Poder de Compra: corrige coluna 'Meses Muito Abaixo do Potencial' exportando como percentual em vez de número; remove o percentual acumulado do relatório.",
         "Migração de Grupo: ajusta a pontuação — queda de faixa agora pesa mais que subida (-3 / +2).",
     ],
+    "1.6.2": [
+        "Alto Giro: 'Cliente Destaque' nunca mais repete o mesmo cliente de 'Cliente em Queda' no mesmo produto.",
+        "Corrige o painel de Execução (log/progresso) sumindo em janelas menores.",
+        "Poder de Compra: descarta picos isolados (um mês fora da curva) antes de calcular o potencial do cliente; '% do Potencial Realizado' vira '% de Variação vs. Potencial'.",
+        "Produtos considerados na análise: lista agora abre ordenada por frequência.",
+        "Gráficos: novos tipos (Barras, Linha, Pizza, Histograma, Pirâmide), filtros de período/valor mínimo/fabricante/faixa ABC, exportar para Excel, e corrige 'Vendas por Fabricante' sem opção de colorir por Fabricante.",
+    ],
 }

@@ -457,9 +457,22 @@ class PainelGraficosFrame(ttk.Frame):
         self.entrada_valor_minimo.insert(0, "0")
         self.entrada_valor_minimo.pack(side="left", padx=4)
 
-        ttk.Button(linha2, text="Plotar", command=self._plotar).pack(side="left", padx=(12, 4))
-        ttk.Button(linha2, text="Exportar PNG", command=self._exportar_png).pack(side="left", padx=4)
-        ttk.Button(linha2, text="Exportar Excel", command=self._exportar_excel).pack(side="left", padx=4)
+        linha3 = ttk.Frame(self)
+        linha3.pack(fill="x", padx=8, pady=(0, 4))
+
+        ttk.Label(linha3, text="Fabricante:").pack(side="left")
+        self.combo_filtro_fabricante = ttk.Combobox(linha3, values=["Todos"], state="readonly", width=22)
+        self.combo_filtro_fabricante.current(0)
+        self.combo_filtro_fabricante.pack(side="left", padx=4)
+
+        ttk.Label(linha3, text="Faixa ABC:").pack(side="left", padx=(12, 0))
+        self.combo_filtro_faixa_abc = ttk.Combobox(linha3, values=["Todos"], state="readonly", width=12)
+        self.combo_filtro_faixa_abc.current(0)
+        self.combo_filtro_faixa_abc.pack(side="left", padx=4)
+
+        ttk.Button(linha3, text="Plotar", command=self._plotar).pack(side="left", padx=(12, 4))
+        ttk.Button(linha3, text="Exportar PNG", command=self._exportar_png).pack(side="left", padx=4)
+        ttk.Button(linha3, text="Exportar Excel", command=self._exportar_excel).pack(side="left", padx=4)
 
         self.figura, self.eixo = plt.subplots(figsize=(8, 5))
         self.canvas = FigureCanvasTkAgg(self.figura, master=self)
@@ -522,26 +535,54 @@ class PainelGraficosFrame(ttk.Frame):
         self.combo_periodo_de.set(periodos[0])
         self.combo_periodo_ate.set(periodos[-1])
 
+    def _atualizar_filtros_dimensao(self, df, abc_df):
+        """Popula os combos de Fabricante/Faixa ABC a partir da base carregada — "Todos" sempre preserva a escolha atual se ainda for válida."""
+        fabricantes = ["Todos"] + sorted(df["NOME_FABRICANTE"].dropna().unique().tolist())
+        if list(self.combo_filtro_fabricante["values"]) != fabricantes:
+            escolha_atual = self.combo_filtro_fabricante.get()
+            self.combo_filtro_fabricante["values"] = fabricantes
+            self.combo_filtro_fabricante.set(escolha_atual if escolha_atual in fabricantes else "Todos")
+
+        mapa_abc = _abc_do_cliente(df, abc_df)
+        faixas = ["Todos"] + sorted(set(mapa_abc.values()))
+        if list(self.combo_filtro_faixa_abc["values"]) != faixas:
+            escolha_atual = self.combo_filtro_faixa_abc.get()
+            self.combo_filtro_faixa_abc["values"] = faixas
+            self.combo_filtro_faixa_abc.set(escolha_atual if escolha_atual in faixas else "Todos")
+        return mapa_abc
+
     def _plotar(self):
         df = self.obter_dataframe()
         if df is None:
             messagebox.showwarning("Gráficos", "Carregue um CSV primeiro na aba Relatório Padrão.")
             return
 
+        abc_df = self.obter_abc_df()
         self._atualizar_periodos_disponiveis(df)
+        mapa_abc = self._atualizar_filtros_dimensao(df, abc_df)
+
         periodo_de, periodo_ate = self.combo_periodo_de.get(), self.combo_periodo_ate.get()
         if periodo_de and periodo_ate:
             df = df[(df["Periodo_Mensal"] >= periodo_de) & (df["Periodo_Mensal"] <= periodo_ate)]
-            if df.empty:
-                messagebox.showwarning("Gráficos", "Nenhuma venda no período selecionado.")
-                return
+
+        fabricante_filtro = self.combo_filtro_fabricante.get()
+        if fabricante_filtro and fabricante_filtro != "Todos":
+            df = df[df["NOME_FABRICANTE"] == fabricante_filtro]
+
+        faixa_filtro = self.combo_filtro_faixa_abc.get()
+        if faixa_filtro and faixa_filtro != "Todos":
+            clientes_da_faixa = {cliente for cliente, faixa in mapa_abc.items() if faixa == faixa_filtro}
+            df = df[df["Cliente"].isin(clientes_da_faixa)]
+
+        if df.empty:
+            messagebox.showwarning("Gráficos", "Nenhuma venda com os filtros selecionados.")
+            return
 
         try:
             valor_minimo = float(self.entrada_valor_minimo.get().replace(",", ".").strip() or 0)
         except ValueError:
             valor_minimo = 0.0
 
-        abc_df = self.obter_abc_df()
         view = self.combo_view.get()
         estilo = self.combo_estilo.get()
         opcao = self.combo_opcao.get()

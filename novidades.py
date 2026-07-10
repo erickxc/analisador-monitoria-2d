@@ -37,4 +37,11 @@ NOVIDADES_POR_VERSAO = {
         "PDF: corrige cabeçalhos de tabela sobrepostos, visual renovado (capa e cabeçalhos em preto) e descrição curta de cada relatório.",
         "Excel: corrige colunas de percentual que multiplicavam errado ao formatar como %.",
     ],
+    "1.6.1": [
+        "Corrige a janela principal cortada em telas menores (agora se adapta à resolução disponível).",
+        "Corrige o ícone padrão do Tkinter aparecendo na tela de abertura em vez da logo da 2D.",
+        "Corrige a exclusão de clientes: antes só valia para ABC e Poder de Compra — agora vale em todos os relatórios (Alertas de Queda, Erosão, Alto Giro, Top Produtos, etc.).",
+        "Poder de Compra: corrige coluna 'Meses Muito Abaixo do Potencial' exportando como percentual em vez de número; remove o percentual acumulado do relatório.",
+        "Migração de Grupo: ajusta a pontuação — queda de faixa agora pesa mais que subida (-3 / +2).",
+    ],
 }

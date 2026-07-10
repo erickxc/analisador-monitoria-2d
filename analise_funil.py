@@ -1299,9 +1299,11 @@ def resumo_migracao(migracao_df):
     """
     Uma linha por transição de período, com a contagem de clientes que
     subiram vs. desceram de faixa nela — visão executiva rápida (ver
-    migracao_abc para o detalhe por cliente).
+    migracao_abc para o detalhe por cliente). Margem = Qtd_Subiu -
+    Qtd_Desceu: positiva quando mais clientes subiram do que desceram
+    nessa transição, negativa no caso contrário.
     """
-    colunas = ["Periodo_Anterior", "Periodo_Atual", "Qtd_Subiu", "Qtd_Desceu"]
+    colunas = ["Periodo_Anterior", "Periodo_Atual", "Qtd_Subiu", "Qtd_Desceu", "Margem"]
     if migracao_df.empty:
         return pd.DataFrame(columns=colunas)
 
@@ -1313,6 +1315,7 @@ def resumo_migracao(migracao_df):
         if direcao not in resumo.columns:
             resumo[direcao] = 0
     resumo.rename(columns={"Subiu": "Qtd_Subiu", "Desceu": "Qtd_Desceu"}, inplace=True)
+    resumo["Margem"] = resumo["Qtd_Subiu"] - resumo["Qtd_Desceu"]
     return resumo[colunas]
 
 
@@ -1331,8 +1334,11 @@ def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
     aparece nos dois lados (a mesma base contada por migracao_abc), qual %
     ele NÃO migrou de faixa. 100% = nunca mudou de faixa desde que aparece
     na base.
+
+    Grupo: faixa ABC do cliente no período mais recente em que aparece na
+    base (não a faixa "no auge" nem a mais frequente — onde ele está AGORA).
     """
-    colunas = ["Cliente", "Qtd_Subiu", "Qtd_Desceu", "Score", "Percentual_Permanencia"]
+    colunas = ["Cliente", "Qtd_Subiu", "Qtd_Desceu", "Score", "Percentual_Permanencia", "Grupo"]
     if abc_df.empty:
         return pd.DataFrame(columns=colunas)
 
@@ -1380,6 +1386,10 @@ def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
     )
 
     resultado.rename(columns={"Subiu": "Qtd_Subiu", "Desceu": "Qtd_Desceu"}, inplace=True)
+
+    faixa_mais_recente = abc_df.sort_values("Periodo").groupby("Cliente")["Faixa_ABC"].last()
+    resultado["Grupo"] = resultado["Cliente"].map(faixa_mais_recente).fillna("-")
+
     resultado = resultado[colunas]
     resultado.sort_values("Score", ascending=False, inplace=True)
     resultado.reset_index(drop=True, inplace=True)

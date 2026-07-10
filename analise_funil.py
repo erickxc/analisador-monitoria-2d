@@ -478,6 +478,11 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     balcão/consumidor final, ver REGEX_BALCAO) da escolha desses dois
     clientes — sem isso, "BALCAO AVULSO" domina como destaque/queda na
     maioria dos produtos, sem ser um cliente real e endereçável.
+
+    Cliente_Destaque nunca repete o mesmo nome de Cliente_Em_Queda no
+    mesmo produto: mesmo sendo o maior comprador do mês, um cliente cuja
+    própria compra caiu não é "destaque" nesse produto — o posto passa
+    para o próximo maior comprador que não esteja em queda.
     """
     colunas_vazias = ["descricao", "Receita_Atual", "Status", "Variacao_Percentual",
                        "Cliente_Destaque", "Cliente_Em_Queda"]
@@ -524,15 +529,25 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     if desconsiderar_balcao:
         tabela_cliente = tabela_cliente[~tabela_cliente["Cliente"].str.contains(REGEX_BALCAO, na=False)]
 
-    destaque = (
-        tabela_cliente[tabela_cliente["Receita_Atual_Cliente"] > 0]
-        .sort_values("Receita_Atual_Cliente", ascending=False)
-        .drop_duplicates("descricao")
-        .set_index("descricao")["Cliente"]
-    )
     em_queda_cliente = (
         tabela_cliente[tabela_cliente["Reducao_Cliente"] > 0]
         .sort_values("Reducao_Cliente", ascending=False)
+        .drop_duplicates("descricao")
+        .set_index("descricao")["Cliente"]
+    )
+
+    # Um cliente em queda não pode ser também o "destaque" do mesmo
+    # produto — mesmo sendo o maior comprador do mês, sua própria compra
+    # caiu, então o posto de destaque passa para o próximo maior
+    # comprador (que não esteja em queda nesse produto).
+    tabela_cliente["_em_queda_do_produto"] = tabela_cliente["descricao"].map(em_queda_cliente)
+    candidatos_destaque = tabela_cliente[
+        (tabela_cliente["Receita_Atual_Cliente"] > 0)
+        & (tabela_cliente["Cliente"] != tabela_cliente["_em_queda_do_produto"])
+    ]
+    destaque = (
+        candidatos_destaque
+        .sort_values("Receita_Atual_Cliente", ascending=False)
         .drop_duplicates("descricao")
         .set_index("descricao")["Cliente"]
     )

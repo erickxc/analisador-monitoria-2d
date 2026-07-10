@@ -408,6 +408,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._montar_menu()
         self._montar_cabecalho(self)
 
+        # Painel de Execução (log/progresso) e barra de status são empacotados
+        # ANTES de corpo_principal, de propósito: o pack() do Tk reserva
+        # espaço na ordem em que os widgets são empacotados, então quem vem
+        # primeiro garante seu tamanho mínimo. Se corpo_principal (que tem
+        # expand=True e pode pedir bastante altura, com todas as abas)
+        # empacotasse primeiro, ele consumiria a cavidade toda em janelas
+        # menores (notebook, telas de resolução baixa), deixando ZERO espaço
+        # pro rodapé — o log de execução sumia da tela mesmo com a janela
+        # aberta corretamente. Empacotando o rodapé primeiro, ele nunca é
+        # espremido; é a área de conteúdo (com abas) que cede espaço quando
+        # a janela é pequena.
+        self._montar_painel_execucao(self)
+        self.status_var = tk.StringVar(value="Pronto.")
+        barra_status = ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w")
+        barra_status.pack(fill="x", side="bottom")
+
         corpo_principal = ttk.Frame(self)
         corpo_principal.pack(fill="both", expand=True)
 
@@ -448,12 +464,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.aba_perfil = ttk.Frame(area_conteudo)
         self._montar_aba_perfil(self.aba_perfil)
         self._registrar_pagina_nav("Perfil", "👤", self.aba_perfil, area_conteudo)
-
-        self._montar_painel_execucao(self)
-
-        self.status_var = tk.StringVar(value="Pronto.")
-        barra_status = ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w")
-        barra_status.pack(fill="x", side="bottom")
 
         self._mostrar_pagina("Configurações")
 

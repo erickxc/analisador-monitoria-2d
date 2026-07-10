@@ -1479,6 +1479,16 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     precisa_migracao = precisa("migracao_abc", "migracao_resumo", "migracao_score_clientes")
     precisa_abc = precisa("abc") or precisa_migracao
 
+    # Ponto único de exclusão de clientes: antes, só classificar_abc e
+    # poder_compra_agregado recebiam clientes_excluidos — todo o resto
+    # (Alertas de Queda, Erosão, Alto Giro, Top Produtos, etc.) usava o df
+    # inteiro, então um cliente excluído "das métricas" continuava aparecendo
+    # (ex.: como Cliente Destaque no Alto Giro, ou puxando receita no Top
+    # Produtos). Filtrar aqui, uma única vez, garante que a exclusão valha
+    # igual em toda análise gerada a partir de df/df_periodo.
+    if clientes_excluidos:
+        df = df[~df["Cliente"].isin(set(clientes_excluidos))]
+
     resultados = {}
     for granularidade in granularidades:
         analises = {}

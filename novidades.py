@@ -25,4 +25,16 @@ NOVIDADES_POR_VERSAO = {
         "Remove o relatório 'Venda por Cliente (Top Clientes)', sem uso — virou o gráfico 'Top Clientes por Receita'.",
         "Corrige a atualização automática: agora ela avisa pra reabrir manualmente em vez de tentar reabrir sozinha (o antivírus bloqueava essa reabertura em alguns computadores).",
     ],
+    "1.6.0": [
+        "Catálogo reorganizado em 'Relatórios Gerais' (detalhados, com histórico) e 'Relatórios Gerenciais' (foco no mês mais recente, ação rápida).",
+        "Checkbox 'somente produtos de alto giro' agora vale em todos os relatórios, gráficos e personalizados, com padrão inteligente (Grupo 1) e sem esquecer sua escolha ao trocar de tela ou reabrir o programa.",
+        "Alertas de Queda: sinaliza só quem está em queda AGORA (não um histórico antigo já recuperado), com quantidade vendida e piso mínimo de valor configurável, ordenado por maior impacto financeiro.",
+        "Erosão de Clientes dividida em 'Geral' (cliente como um todo) e 'Por Produto', comparando sempre o último mês contra o pico histórico do cliente.",
+        "Novo relatório 'Alto Giro': status do mês mais recente de cada produto de alto giro, com o cliente que mais comprou e o que mais reduziu a compra.",
+        "Poder de Compra: nova comparação entre o potencial do cliente (pico) e o desempenho dos últimos 3 meses.",
+        "Migração de Grupo: corrige o cálculo de % de permanência e uma falha ao gerar em algumas granularidades.",
+        "Remove o relatório 'Venda por Fabricante (Top Fabricantes)', sem uso — vira o gráfico 'Top Fabricantes por Receita'.",
+        "PDF: corrige cabeçalhos de tabela sobrepostos, visual renovado (capa e cabeçalhos em preto) e descrição curta de cada relatório.",
+        "Excel: corrige colunas de percentual que multiplicavam errado ao formatar como %.",
+    ],
 }

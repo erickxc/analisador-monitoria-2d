@@ -165,6 +165,38 @@ CATALOGO_RELATORIOS = [
     ]),
 ]
 
+# Nem todo relatório do catálogo tem parâmetro próprio (a maioria usa só os
+# globais de Configurações: base, clientes/produtos, segmentação, período,
+# granularidade). Os poucos que têm formam pequenos grupos N:1 — um mesmo
+# campo (ex.: "Queda mínima em R$ p/ alerta") pode ser compartilhado por MAIS
+# de um relatório do catálogo (evolucao_produtos e alertas_queda usam a mesma
+# tendencia_produtos(); erosao_geral e erosao_clientes usam os mesmos pisos de
+# erosão). Por isso isso é modelado como uma aresta N:1 (gatilhos -> campos),
+# não como "1 relatório = 1 bloco de parâmetro": qualquer um dos gatilhos
+# marcado já habilita o grupo inteiro. "apos" é só a chave do catálogo onde o
+# bloco é desenhado (tem que estar na mesma categoria/coluna que os campos).
+GRUPOS_PARAMETROS_RELATORIO = [
+    {
+        "gatilhos": ("evolucao_produtos", "alertas_queda"),
+        "apos": "alertas_queda",
+        "campos": [
+            ("entrada_periodos_queda", "Períodos seguidos em queda:", "2", 6),
+            ("entrada_queda_minima_alerta", "Queda mínima em R$ p/ alerta:", "3000", 8),
+            ("entrada_top_n_produtos", "Produtos a exibir (top N por tendência):", "", 6),
+        ],
+        "legenda": "Vale para \"Tendência de Produtos\" e \"Alertas de Queda Consecutiva\".",
+    },
+    {
+        "gatilhos": ("erosao_geral", "erosao_clientes"),
+        "apos": "erosao_geral",
+        "campos": [
+            ("entrada_reducao_minima_erosao", "Redução mínima p/ erosão (%):", "50", 6),
+            ("entrada_queda_minima_erosao", "Queda mínima em R$ p/ erosão:", "3000", 8),
+        ],
+        "legenda": "Vale para \"Erosão de Clientes (Geral)\" e \"Por Produto\".",
+    },
+]
+
 
 def _preparar_logger():
     pasta_logs = recursos.pasta_logs()
@@ -717,78 +749,32 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             foreground="gray", font=("Segoe UI", 8), justify="left",
         ).grid(row=linha, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
 
-        # --- Bloco 2: Evolução, alertas e erosão ---------------------------
-        bloco_evolucao = ttk.LabelFrame(frame, text="Evolução, alertas e erosão")
-        bloco_evolucao.pack(fill="x", padx=6, pady=(0, 6))
+        # --- Bloco 2: Período e granularidade -------------------------------
+        # Os parâmetros específicos de Alertas de Queda e Erosão de Clientes
+        # (períodos seguidos, pisos de queda em R$/%) NÃO ficam mais aqui —
+        # moveram pra dentro do próprio item do catálogo, na aba Relatório
+        # Padrão (ver GRUPOS_PARAMETROS_RELATORIO), habilitados só quando o
+        # relatório correspondente está marcado. O que sobra aqui é
+        # realmente global: vale pra toda análise "por período", não só
+        # pra um relatório específico.
+        bloco_periodo = ttk.LabelFrame(frame, text="Período e granularidade")
+        bloco_periodo.pack(fill="x", padx=6, pady=(0, 6))
 
         self.check_incluir_periodo_atual = ttk.Checkbutton(
-            bloco_evolucao, text="Incluir período mais recente (geralmente incompleto)",
+            bloco_periodo, text="Incluir período mais recente (geralmente incompleto)",
             command=self._marcar_configuracao_alterada,
         )
         self.check_incluir_periodo_atual.state(["!selected", "!alternate"])
         self.check_incluir_periodo_atual.grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 0))
         ttk.Label(
-            bloco_evolucao, text="Desmarcado (padrão): o último período de cada relatório fica de fora.",
+            bloco_periodo, text="Desmarcado (padrão): o último período de cada relatório fica de fora.",
             foreground="gray", font=("Segoe UI", 8),
         ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
 
-        ttk.Label(bloco_evolucao, text="Produtos a exibir (Evolução/Alertas):", width=LARGURA_ROTULO, anchor="w").grid(
-            row=2, column=0, sticky="w", padx=6, pady=4
-        )
-        self.entrada_top_n_produtos = ttk.Entry(bloco_evolucao, width=8)
-        self.entrada_top_n_produtos.grid(row=2, column=1, sticky="w", padx=6, pady=4)
-        ttk.Label(bloco_evolucao, text="em branco = todos, ordenado por tendência", foreground="gray", font=("Segoe UI", 8)).grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=6
-        )
-
-        ttk.Label(bloco_evolucao, text="Redução mínima p/ erosão (%):", width=LARGURA_ROTULO, anchor="w").grid(
-            row=4, column=0, sticky="w", padx=6, pady=(10, 4)
-        )
-        self.entrada_reducao_minima_erosao = ttk.Entry(bloco_evolucao, width=8)
-        self.entrada_reducao_minima_erosao.insert(0, "50")
-        self.entrada_reducao_minima_erosao.grid(row=4, column=1, sticky="w", padx=6, pady=(10, 4))
-        ttk.Label(bloco_evolucao, text="compara o último mês contra o pico histórico do cliente+produto", foreground="gray", font=("Segoe UI", 8)).grid(
-            row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
-        )
-
-        ttk.Label(bloco_evolucao, text="Queda mínima em R$ p/ alerta:", width=LARGURA_ROTULO, anchor="w").grid(
-            row=6, column=0, sticky="w", padx=6, pady=(0, 4)
-        )
-        self.entrada_queda_minima_alerta = ttk.Entry(bloco_evolucao, width=8)
-        self.entrada_queda_minima_alerta.insert(0, "3000")
-        self.entrada_queda_minima_alerta.grid(row=6, column=1, sticky="w", padx=6, pady=(0, 4))
-        ttk.Label(bloco_evolucao, text="ignora quedas pequenas, sem relevância financeira", foreground="gray", font=("Segoe UI", 8)).grid(
-            row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
-        )
-
-        ttk.Label(bloco_evolucao, text="Queda mínima em R$ p/ erosão:", width=LARGURA_ROTULO, anchor="w").grid(
-            row=8, column=0, sticky="w", padx=6, pady=(0, 4)
-        )
-        self.entrada_queda_minima_erosao = ttk.Entry(bloco_evolucao, width=8)
-        self.entrada_queda_minima_erosao.insert(0, "3000")
-        self.entrada_queda_minima_erosao.grid(row=8, column=1, sticky="w", padx=6, pady=(0, 4))
-        ttk.Label(bloco_evolucao, text="além do % — os dois pisos precisam ser atingidos juntos", foreground="gray", font=("Segoe UI", 8)).grid(
-            row=9, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6)
-        )
-
-        # --- Bloco 3: Alertas e granularidade ------------------------------
-        bloco_alertas = ttk.LabelFrame(frame, text="Alertas e granularidade")
-        bloco_alertas.pack(fill="x", padx=6, pady=(0, 6))
-
-        ttk.Label(bloco_alertas, text="Períodos seguidos em queda p/ alerta:", width=LARGURA_ROTULO, anchor="w").grid(
-            row=0, column=0, sticky="w", padx=6, pady=4
-        )
-        self.entrada_periodos_queda = ttk.Entry(bloco_alertas, width=8)
-        self.entrada_periodos_queda.insert(0, "2")
-        self.entrada_periodos_queda.grid(row=0, column=1, sticky="w", padx=6, pady=4)
-        ttk.Label(bloco_alertas, text="aplicado à granularidade escolhida abaixo", foreground="gray", font=("Segoe UI", 8)).grid(
-            row=1, column=0, columnspan=2, sticky="w", padx=6
-        )
-
-        ttk.Label(bloco_alertas, text="Granularidade do relatório:", width=LARGURA_ROTULO, anchor="w").grid(
+        ttk.Label(bloco_periodo, text="Granularidade do relatório:", width=LARGURA_ROTULO, anchor="w").grid(
             row=2, column=0, sticky="w", padx=6, pady=(10, 4)
         )
-        linha_granularidade = ttk.Frame(bloco_alertas)
+        linha_granularidade = ttk.Frame(bloco_periodo)
         linha_granularidade.grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
         self.var_granularidade = tk.StringVar(master=self, value="Mensal")
         for granularidade in af.GRANULARIDADES:
@@ -1285,8 +1271,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._escrever_cortes_grupos(configuracao.get("cortes_grupo", ["30", "50", "60"]))
         self.entrada_max_por_grupo.delete(0, "end")
         self.entrada_max_por_grupo.insert(0, configuracao.get("max_por_grupo", "10"))
+        # ttk.Entry "disabled" bloqueia insert/delete programático em silêncio
+        # (sem erro, mas sem efeito) -- se o relatório-gatilho estiver
+        # desmarcado no momento de carregar a configuração, o campo fica
+        # "travado" no valor antigo sem avisar. Habilita antes de escrever e
+        # deixa o estado final por conta de _atualizar_estado_campos_condicionais_catalogo().
+        self.entrada_periodos_queda.config(state="normal")
         self.entrada_periodos_queda.delete(0, "end")
         self.entrada_periodos_queda.insert(0, configuracao.get("periodos_queda", "2"))
+        self._atualizar_estado_campos_condicionais_catalogo()
 
         self.var_granularidade.set(configuracao.get("granularidade", "Mensal"))
 
@@ -1640,8 +1633,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", padx=10, pady=(10, 0))
         ttk.Label(
-            master, text="Os parâmetros (base de dados, clientes/produtos, cortes) são definidos na aba Configurações.",
-            foreground="gray",
+            master,
+            text="Parâmetros gerais (base de dados, clientes/produtos, segmentação, período, granularidade) ficam em "
+                 "Configurações. Os específicos de Alertas de Queda/Tendência e Erosão de Clientes aparecem abaixo, "
+                 "junto do relatório correspondente — só valem se o relatório estiver marcado.",
+            foreground="gray", wraplength=900, justify="left",
         ).pack(anchor="w", padx=10, pady=(0, 8))
 
         barra_selecao = ttk.Frame(master)
@@ -1661,15 +1657,24 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         # ligada se mostrou pouco confiável (o clique às vezes não disparava
         # a escrita na variável). command= nunca falhou nos testes.
         self.checkboxes_catalogo = {}
+        self._campos_condicionais_catalogo = []
+        grupos_por_apos = {grupo["apos"]: grupo for grupo in GRUPOS_PARAMETROS_RELATORIO}
         for i, (categoria, itens) in enumerate(CATALOGO_RELATORIOS):
             grupo = ttk.LabelFrame(lista_frame, text=categoria)
             grupo.grid(row=i // 2, column=i % 2, sticky="nsew", padx=6, pady=6)
-            for j, (chave, titulo) in enumerate(itens):
-                caixa = ttk.Checkbutton(grupo, text=titulo, command=self._atualizar_contagem_catalogo)
+            linha = 0
+            for chave, titulo in itens:
+                caixa = ttk.Checkbutton(grupo, text=titulo, command=self._ao_alterar_catalogo)
                 caixa.state(["selected", "!alternate"])
-                caixa.grid(row=j, column=0, sticky="w", padx=10, pady=4)
+                caixa.grid(row=linha, column=0, sticky="w", padx=10, pady=4)
                 self.checkboxes_catalogo[chave] = caixa
+                linha += 1
+
+                grupo_parametros = grupos_por_apos.get(chave)
+                if grupo_parametros is not None:
+                    linha = self._montar_campos_condicionais_catalogo(grupo, linha, grupo_parametros)
         self._atualizar_contagem_catalogo()
+        self._atualizar_estado_campos_condicionais_catalogo()
 
         area_exportacao = ttk.LabelFrame(master, text="Exportação")
         area_exportacao.pack(fill="x", padx=10, pady=(0, 10))
@@ -1699,6 +1704,39 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         for caixa in self.checkboxes_catalogo.values():
             caixa.state(["selected", "!alternate"] if valor else ["!selected", "!alternate"])
         self._atualizar_contagem_catalogo()
+        self._atualizar_estado_campos_condicionais_catalogo()
+
+    def _montar_campos_condicionais_catalogo(self, master, linha, grupo_parametros):
+        """Sub-bloco indentado com os campos de um grupo (ver GRUPOS_PARAMETROS_RELATORIO), logo abaixo do checkbox "apos"."""
+        sub = ttk.Frame(master)
+        sub.grid(row=linha, column=0, sticky="w", padx=(28, 6), pady=(0, 6))
+        for i, (nome_atributo, rotulo, valor_padrao, largura) in enumerate(grupo_parametros["campos"]):
+            ttk.Label(sub, text=rotulo).grid(row=i, column=0, sticky="w", pady=2)
+            entrada = ttk.Entry(sub, width=largura)
+            if valor_padrao:
+                entrada.insert(0, valor_padrao)
+            entrada.grid(row=i, column=1, sticky="w", padx=(6, 0), pady=2)
+            setattr(self, nome_atributo, entrada)
+        if grupo_parametros.get("legenda"):
+            ttk.Label(
+                sub, text=grupo_parametros["legenda"], foreground="gray", font=("Segoe UI", 8),
+            ).grid(row=len(grupo_parametros["campos"]), column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self._campos_condicionais_catalogo.append(grupo_parametros)
+        return linha + 1
+
+    def _ao_alterar_catalogo(self):
+        self._atualizar_contagem_catalogo()
+        self._atualizar_estado_campos_condicionais_catalogo()
+
+    def _atualizar_estado_campos_condicionais_catalogo(self):
+        """Habilita/desabilita cada grupo de campos conforme algum dos relatórios-gatilho está marcado."""
+        for grupo_parametros in self._campos_condicionais_catalogo:
+            ligado = any(
+                self.checkboxes_catalogo[chave].instate(["selected"]) for chave in grupo_parametros["gatilhos"]
+            )
+            estado = "normal" if ligado else "disabled"
+            for nome_atributo, *_ in grupo_parametros["campos"]:
+                getattr(self, nome_atributo).config(state=estado)
 
     def _chaves_catalogo_selecionadas(self):
         return [chave for chave, caixa in self.checkboxes_catalogo.items() if caixa.instate(["selected"])]

@@ -420,7 +420,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         # espremido; é a área de conteúdo (com abas) que cede espaço quando
         # a janela é pequena.
         self._montar_painel_execucao(self)
-        self.status_var = tk.StringVar(value="Pronto.")
+        self.status_var = tk.StringVar(master=self, value="Pronto.")
         barra_status = ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w")
         barra_status.pack(fill="x", side="bottom")
 
@@ -756,7 +756,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         )
         linha_granularidade = ttk.Frame(bloco_alertas)
         linha_granularidade.grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
-        self.var_granularidade = tk.StringVar(value="Mensal")
+        self.var_granularidade = tk.StringVar(master=self, value="Mensal")
         for granularidade in af.GRANULARIDADES:
             ttk.Radiobutton(
                 linha_granularidade, text=granularidade, value=granularidade, variable=self.var_granularidade,
@@ -1588,7 +1588,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         barra_formato = ttk.Frame(area_exportacao)
         barra_formato.pack(pady=(10, 0))
         ttk.Label(barra_formato, text="Formato de exportação:").pack(side="left", padx=(0, 8))
-        self.var_formato_exportacao = tk.StringVar(value="Excel")
+        self.var_formato_exportacao = tk.StringVar(master=self, value="Excel")
         for formato in ("Excel", "PDF", "Word"):
             ttk.Radiobutton(
                 barra_formato, text=formato, value=formato, variable=self.var_formato_exportacao,

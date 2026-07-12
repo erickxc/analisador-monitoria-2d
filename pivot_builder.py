@@ -248,7 +248,7 @@ class ConstrutorRelatorioFrame(ttk.Frame):
         janela = tk.Toplevel(self)
         janela.title("Escolha a agregação")
         janela.grab_set()
-        variavel = tk.StringVar(value="Soma")
+        variavel = tk.StringVar(master=janela, value="Soma")
         ttk.Label(janela, text="Agregação:").pack(padx=10, pady=6)
         combo = ttk.Combobox(janela, textvariable=variavel, values=list(AGREGACOES_DISPONIVEIS.keys()), state="readonly")
         combo.pack(padx=10, pady=6)

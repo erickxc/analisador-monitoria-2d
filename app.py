@@ -482,6 +482,10 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._montar_aba_padrao(self.aba_padrao)
         self._registrar_pagina_nav("Relatório Padrão", "📄", self.aba_padrao, area_conteudo)
 
+        self.aba_visualizar = ttk.Frame(area_conteudo)
+        self._montar_aba_visualizar(self.aba_visualizar)
+        self._registrar_pagina_nav("Visualizar Relatório", "👁", self.aba_visualizar, area_conteudo)
+
         self.aba_personalizados = pb.ConstrutorRelatorioFrame(
             area_conteudo, obter_dataframe=lambda: self._dataframe_para_analise(),
             relatorios_personalizados=self.relatorios_personalizados,
@@ -1700,6 +1704,134 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.botao_gerar = ttk.Button(area_exportacao, text="Gerar Relatório Padrão", command=self._gerar_relatorio_padrao)
         self.botao_gerar.pack(pady=14)
 
+    # ------------------------------------------------------------------
+    # Visualizar Relatório: navega os DataFrames da última geração sem
+    # precisar exportar pra Excel/PDF/Word e abrir o arquivo à parte.
+    # ------------------------------------------------------------------
+
+    def _montar_aba_visualizar(self, master):
+        ttk.Label(
+            master, text="Visualize aqui os relatórios da última geração (Relatório Padrão) — sem precisar exportar.",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w", padx=10, pady=(10, 0))
+
+        barra = ttk.Frame(master)
+        barra.pack(fill="x", padx=10, pady=8)
+
+        ttk.Label(barra, text="Granularidade:").pack(side="left")
+        self.combo_visualizar_granularidade = ttk.Combobox(barra, state="readonly", width=12, values=[])
+        self.combo_visualizar_granularidade.pack(side="left", padx=(4, 12))
+        self.combo_visualizar_granularidade.bind(
+            "<<ComboboxSelected>>", lambda _evento: self._popular_combo_visualizar_relatorio()
+        )
+
+        ttk.Label(barra, text="Relatório:").pack(side="left")
+        self.combo_visualizar_relatorio = ttk.Combobox(barra, state="readonly", width=48, values=[])
+        self.combo_visualizar_relatorio.pack(side="left", padx=4)
+        self.combo_visualizar_relatorio.bind("<<ComboboxSelected>>", lambda _evento: self._exibir_tabela_visualizar())
+
+        self.label_visualizar_contagem = ttk.Label(barra, text="Nenhum relatório gerado ainda.", foreground="gray")
+        self.label_visualizar_contagem.pack(side="right")
+
+        container = ttk.Frame(master)
+        container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        container.rowconfigure(0, weight=1)
+        container.columnconfigure(0, weight=1)
+
+        self.arvore_visualizar = ttk.Treeview(container, show="headings")
+        barra_v = ttk.Scrollbar(container, orient="vertical", command=self.arvore_visualizar.yview)
+        barra_h = ttk.Scrollbar(container, orient="horizontal", command=self.arvore_visualizar.xview)
+        self.arvore_visualizar.configure(yscrollcommand=barra_v.set, xscrollcommand=barra_h.set)
+        self.arvore_visualizar.grid(row=0, column=0, sticky="nsew")
+        barra_v.grid(row=0, column=1, sticky="ns")
+        barra_h.grid(row=1, column=0, sticky="ew")
+
+    def _rotulo_amigavel_relatorio(self, chave):
+        for _categoria, itens in CATALOGO_RELATORIOS:
+            for chave_item, titulo in itens:
+                if chave_item == chave:
+                    return titulo
+        rotulos_extra = {
+            "migracao_resumo": "Migração de Grupo — Resumo",
+            "migracao_score_clientes": "Migração de Grupo — Score por Cliente",
+        }
+        return rotulos_extra.get(chave, NOMES_ANALISE.get(chave, chave))
+
+    def _popular_visualizador_relatorio(self):
+        """Chamado sempre que self.resultados_analise muda (nova geração concluída) -- repopula os combos."""
+        if not self.resultados_analise:
+            return
+        granularidades = list(self.resultados_analise.keys())
+        self.combo_visualizar_granularidade["values"] = granularidades
+        if self.combo_visualizar_granularidade.get() not in granularidades:
+            self.combo_visualizar_granularidade.set(granularidades[0])
+        self._popular_combo_visualizar_relatorio()
+
+    def _popular_combo_visualizar_relatorio(self):
+        granularidade = self.combo_visualizar_granularidade.get()
+        analises = self.resultados_analise.get(granularidade, {}) if self.resultados_analise else {}
+        chaves = list(analises.keys())
+        rotulos = [self._rotulo_amigavel_relatorio(chave) for chave in chaves]
+        self._mapa_visualizar_rotulo_para_chave = dict(zip(rotulos, chaves))
+        self.combo_visualizar_relatorio["values"] = rotulos
+        if rotulos and self.combo_visualizar_relatorio.get() not in rotulos:
+            self.combo_visualizar_relatorio.set(rotulos[0])
+        self._exibir_tabela_visualizar()
+
+    def _formatar_celula_visualizar(self, nome_coluna, valor, eh_moeda):
+        if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+            return ""
+        if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+            if eh_moeda:
+                return _formatar_moeda_br(valor)
+            if any(marcador in nome_coluna for marcador in ("%", "Percentual", "Pct")):
+                return f"{valor:,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+            if isinstance(valor, float) and not float(valor).is_integer():
+                return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            return f"{int(valor):,}".replace(",", ".")
+        return str(valor)
+
+    # Linhas exibidas de uma vez na Treeview — tabelas de centenas de milhares
+    # de linhas (ex.: ABC sem corte) travariam a interface tentando desenhar
+    # tudo; quem precisa da base completa já tem Excel/Relatórios Personalizados.
+    LIMITE_LINHAS_VISUALIZAR = 500
+
+    def _exibir_tabela_visualizar(self):
+        arvore = self.arvore_visualizar
+        arvore.delete(*arvore.get_children())
+        arvore["columns"] = ()
+
+        rotulo = self.combo_visualizar_relatorio.get()
+        chave = getattr(self, "_mapa_visualizar_rotulo_para_chave", {}).get(rotulo)
+        granularidade = self.combo_visualizar_granularidade.get()
+        if not chave or not self.resultados_analise:
+            self.label_visualizar_contagem.config(text="Nenhum relatório gerado ainda.")
+            return
+
+        df = self.resultados_analise.get(granularidade, {}).get(chave)
+        if df is None or df.empty:
+            self.label_visualizar_contagem.config(text="0 linhas.")
+            return
+
+        colunas_moeda = set(COLUNAS_MOEDA_POR_ANALISE.get(chave, []))
+        colunas = list(df.columns)
+        arvore["columns"] = colunas
+        for coluna in colunas:
+            arvore.heading(coluna, text=coluna)
+            arvore.column(coluna, width=max(90, min(220, 10 * len(coluna))), anchor="w")
+
+        for _, linha in df.head(self.LIMITE_LINHAS_VISUALIZAR).iterrows():
+            valores = [
+                self._formatar_celula_visualizar(coluna, linha[coluna], coluna in colunas_moeda)
+                for coluna in colunas
+            ]
+            arvore.insert("", "end", values=valores)
+
+        texto_contagem = f"{len(df)} linha(s)."
+        if len(df) > self.LIMITE_LINHAS_VISUALIZAR:
+            texto_contagem += f" Mostrando as {self.LIMITE_LINHAS_VISUALIZAR} primeiras — use Excel para a base completa."
+        self.label_visualizar_contagem.config(text=texto_contagem)
+
     def _marcar_catalogo(self, valor):
         for caixa in self.checkboxes_catalogo.values():
             caixa.state(["selected", "!alternate"] if valor else ["!selected", "!alternate"])
@@ -1860,6 +1992,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.botao_gerar.config(state="normal")
         self.thread_em_execucao = False
         self.resultados_analise = resultados
+        self._popular_visualizador_relatorio()
         self._registrar_log("Análises concluídas com sucesso.")
 
         formato = self._formato_geracao

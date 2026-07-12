@@ -617,7 +617,33 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         coluna_produtos.pack(side="left", fill="both", expand=True)
 
     def _montar_coluna_parametros(self, master):
-        frame = ttk.LabelFrame(master, text="Parâmetros (valem para todos os relatórios)")
+        """
+        A coluna de parâmetros acumulou blocos demais (Segmentação, Evolução/
+        alertas/erosão, Alertas e granularidade) pra caber sem cortar em
+        janelas normais — sem scrollbar, o bloco "Alertas e granularidade"
+        (e legendas do bloco anterior) ficava simplesmente inacessível abaixo
+        do fim da janela. Canvas + Scrollbar clássico do Tkinter: o conteúdo
+        real mora em `frame`, dentro do canvas; a roda do mouse só rola
+        quando o cursor está sobre esta coluna (bind/unbind em Enter/Leave),
+        senão ia capturar a rolagem das listas de Clientes/Produtos também.
+        """
+        container = ttk.Frame(master)
+        canvas = tk.Canvas(container, borderwidth=0, highlightthickness=0, width=380)
+        barra_rolagem = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=barra_rolagem.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        barra_rolagem.pack(side="right", fill="y")
+
+        def _ao_rolar_mouse(evento):
+            canvas.yview_scroll(int(-1 * (evento.delta / 120)), "units")
+
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _ao_rolar_mouse))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+        frame = ttk.LabelFrame(canvas, text="Parâmetros (valem para todos os relatórios)")
+        janela_frame = canvas.create_window((0, 0), window=frame, anchor="nw")
+        frame.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda evento: canvas.itemconfig(janela_frame, width=evento.width))
 
         LARGURA_ROTULO = 26
 
@@ -771,7 +797,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 command=lambda g=granularidade: self.var_granularidade.set(g),
             ).pack(side="left", padx=(0, 10))
 
-        return frame
+        # Garante a região de rolagem final: o <Configure> do frame pode
+        # disparar antes de todos os blocos abaixo serem montados/ajustados
+        # à largura do canvas, deixando a barra de rolagem "curta" (parava
+        # antes do fim real do conteúdo).
+        frame.update_idletasks()
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+        return container
 
     def _montar_lista_com_filtro(self, master, titulo, colunas):
         """

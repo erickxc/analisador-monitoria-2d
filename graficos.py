@@ -20,6 +20,8 @@ from tkinter import ttk, filedialog, messagebox
 
 import pandas as pd
 
+import analise_funil as af
+
 
 def _mapa_cores_categorico(categorias):
     """
@@ -170,6 +172,47 @@ def desenhar_vendas_por_produto(ax, df, abc_df, colorir_por="Faixa_ABC", estilo=
     return agrupado
 
 
+def _colunas_mes_atual_anterior(df, campo):
+    """
+    Receita/QTD dos dois períodos mensais mais recentes presentes em `df`
+    (após os filtros já aplicados pela tela — período/fabricante/faixa ABC),
+    lado a lado por `campo` — mesmos dois períodos que _piramide_comparativa
+    usa, "atual"/"anterior" no sentido de "últimos disponíveis no recorte",
+    não necessariamente o mês corrente do calendário (a base costuma vir sem
+    o mês em andamento). None se não der pra determinar 2 períodos (base sem
+    Periodo_Mensal, ou com um período só).
+    """
+    if "Periodo_Mensal" not in df.columns:
+        return None
+    periodos = sorted(df["Periodo_Mensal"].dropna().unique().tolist())
+    if len(periodos) < 2:
+        return None
+    periodo_anterior, periodo_atual = periodos[-2], periodos[-1]
+
+    base = df[df["Periodo_Mensal"].isin([periodo_anterior, periodo_atual])]
+    pivot = base.groupby([campo, "Periodo_Mensal"]).agg(Receita=("Receita", "sum"), QTD=("QTD", "sum")).unstack("Periodo_Mensal")
+
+    def _coluna(metrica, periodo):
+        return pivot[(metrica, periodo)] if (metrica, periodo) in pivot.columns else 0
+
+    rotulo_atual = af._formatar_rotulo_periodo(periodo_atual, "Mensal")
+    rotulo_anterior = af._formatar_rotulo_periodo(periodo_anterior, "Mensal")
+    resultado = pd.DataFrame(index=pivot.index)
+    resultado[f"Mês Atual — Receita ({rotulo_atual})"] = _coluna("Receita", periodo_atual)
+    resultado[f"Mês Atual — QTD ({rotulo_atual})"] = _coluna("QTD", periodo_atual)
+    resultado[f"Mês Anterior — Receita ({rotulo_anterior})"] = _coluna("Receita", periodo_anterior)
+    resultado[f"Mês Anterior — QTD ({rotulo_anterior})"] = _coluna("QTD", periodo_anterior)
+    return resultado.fillna(0).reset_index()
+
+
+def _anexar_mes_atual_anterior(agrupado, df, campo):
+    """Faz o merge de _colunas_mes_atual_anterior em `agrupado` (in-place-like, retorna o resultado) — no-op se não der pra calcular."""
+    extras = _colunas_mes_atual_anterior(df, campo)
+    if extras is None:
+        return agrupado
+    return agrupado.merge(extras, on=campo, how="left")
+
+
 def _piramide_comparativa(ax, df, campo, top_n, valor_minimo, rotulo_campo):
     """
     Gráfico de pirâmide (estilo IBGE): barras horizontais espelhadas
@@ -293,6 +336,8 @@ def desenhar_top_fabricantes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0
         return agrupado_completo
 
     agrupado = agrupado_completo.head(top_n)
+    agrupado = _anexar_mes_atual_anterior(agrupado, df, "NOME_FABRICANTE")
+
     if estilo == "Pizza":
         rotulos, valores = _preparar_fatias_pizza(agrupado["NOME_FABRICANTE"].tolist(), agrupado["Receita"].tolist())
         ax.pie(valores, labels=rotulos, autopct="%1.1f%%", textprops={"fontsize": 7})

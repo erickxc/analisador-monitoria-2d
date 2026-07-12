@@ -126,7 +126,7 @@ Seis visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` d
 3. **Receita Agrupada** — receita total por Fabricante ou por Produto, ordenado decrescente (sem cor por faixa).
 4. **Afinidade Cliente × Fabricante** — % do faturamento do cliente que vem daquele fabricante (eixo X) × frequência de compra (eixo Y).
 5. **Top Clientes por Receita** — receita total dos N clientes de maior faturamento (10/20/50/100, ajustável), ordenado decrescente, sem cor por faixa. Substitui o relatório `top_clientes` removido do catálogo.
-6. **Top Fabricantes por Receita** — mesma ideia, por fabricante (N ajustável). Substitui o relatório `top_fabricantes` removido do catálogo.
+6. **Top Fabricantes por Receita** — mesma ideia, por fabricante (N ajustável). Substitui o relatório `top_fabricantes` removido do catálogo. Nos estilos Barras/Dispersão/Pizza (não em Histograma nem Pirâmide, que já são outra comparação), a tabela exportada ganha 4 colunas extras — Receita/QTD do "Mês Atual" e do "Mês Anterior" (os dois últimos `Periodo_Mensal` presentes no recorte já filtrado por período/fabricante/faixa na tela, não necessariamente o mês corrente do calendário) — via `_colunas_mes_atual_anterior` em `graficos.py`, ao lado do total (`Receita`/`QTD`, soma de todo o período filtrado).
 
 Exportação: só PNG, um gráfico por vez (a view atualmente selecionada).
 

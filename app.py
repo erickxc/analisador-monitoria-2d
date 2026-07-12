@@ -205,6 +205,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.relatorios_personalizados = {}
         self.estado_clientes = {}   # cliente -> True se EXCLUÍDO
         self.estado_produtos = {}   # produto -> True se CONSIDERADO
+        self.vars_lojas = {}   # loja -> tk.BooleanVar (True = incluída na análise)
         self._produtos_manual = set()  # produtos com "Considerar?" alterado à mão — não são resincronizados com o Grupo 1
         self._caminho_csv_atual = None  # chave da configuração automática (ver _salvar/_carregar_configuracao_automatica)
         self.thread_em_execucao = False
@@ -571,6 +572,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.label_arquivo = ttk.Label(grupo_base, text="Nenhum arquivo carregado", foreground="gray")
         self.label_arquivo.pack(anchor="w", padx=8, pady=(0, 6))
 
+        grupo_lojas = ttk.LabelFrame(topo, text="Lojas incluídas na análise")
+        grupo_lojas.pack(side="left", fill="y", padx=8)
+        self.container_lojas = ttk.Frame(grupo_lojas)
+        self.container_lojas.pack(padx=8, pady=6)
+        self.label_lojas_vazio = ttk.Label(self.container_lojas, text="Carregue um CSV para escolher as lojas.", foreground="gray")
+        self.label_lojas_vazio.pack(anchor="w")
+
         grupo_empresa = ttk.LabelFrame(topo, text="Empresa analisada")
         grupo_empresa.pack(side="left", fill="y", padx=8)
         self.entrada_nome_empresa = ttk.Entry(grupo_empresa, width=32)
@@ -915,6 +923,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.botao_limpar_base.config(state="normal")
         self._popular_lista_clientes()
         self._popular_lista_produtos()
+        self._popular_lista_lojas()
         self._carregar_configuracao_automatica()
         self._registrar_log(f"CSV carregado com sucesso: {len(self.df)} linhas, "
                              f"{self.df['Cliente'].nunique()} clientes, {self.df['descricao'].nunique()} produtos.")
@@ -933,6 +942,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._caminho_csv_atual = None
         self.dados_clientes = []
         self.dados_produtos = []
+
+        for filho in self.container_lojas.winfo_children():
+            filho.destroy()
+        self.vars_lojas = {}
+        self.label_lojas_vazio = ttk.Label(self.container_lojas, text="Carregue um CSV para escolher as lojas.", foreground="gray")
+        self.label_lojas_vazio.pack(anchor="w")
 
         for linha in self.arvore_clientes.get_children():
             self.arvore_clientes.delete(linha)
@@ -1065,22 +1080,53 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _produtos_excluidos(self):
         return [produto for produto, considerado in self.estado_produtos.items() if not considerado]
 
+    def _lojas_selecionadas(self):
+        return [loja for loja, var in self.vars_lojas.items() if var.get()]
+
+    def _popular_lista_lojas(self):
+        """
+        (Re)monta os checkboxes de loja a partir do CSV recém-carregado —
+        as lojas variam de base pra base, então a lista não dá pra ser
+        fixa: precisa ser reconstruída a cada _selecionar_csv/_limpar_base,
+        igual às listas de clientes/produtos.
+        """
+        for filho in self.container_lojas.winfo_children():
+            filho.destroy()
+        self.vars_lojas = {}
+
+        lojas = sorted(self.df["Loja"].dropna().unique())
+        for loja in lojas:
+            var = tk.BooleanVar(master=self, value=True)
+            var.trace_add("write", lambda *_: self._marcar_configuracao_alterada())
+            ttk.Checkbutton(self.container_lojas, text=loja, variable=var).pack(anchor="w")
+            self.vars_lojas[loja] = var
+
     def _dataframe_para_analise(self):
         """
         DataFrame efetivo para qualquer consumidor (relatório padrão,
-        gráficos, relatórios personalizados): com o checkbox "Considerar
-        somente produtos de alto giro" marcado (padrão), filtra fora os
+        gráficos, relatórios personalizados): filtra pelas lojas marcadas em
+        "Lojas incluídas na análise" e, com o checkbox "Considerar somente
+        produtos de alto giro" marcado (padrão), também filtra fora os
         produtos desmarcados na lista "Produtos considerados na análise" —
-        senão usa a base inteira, sem filtro nenhum. Um único ponto pra essa
-        regra valer igual em todo lugar, em vez de cada aba decidir sozinha
-        se respeita ou não a lista de produtos.
+        senão usa a base inteira (sem filtro de produto). Um único ponto pra
+        essas regras valerem igual em todo lugar, em vez de cada aba decidir
+        sozinha se respeita ou não as listas de loja/produto.
         """
         if self.df is None:
             return None
-        if not self.check_somente_alto_giro.instate(["selected"]):
-            return self.df
-        produtos_excluidos = self._produtos_excluidos()
-        return self.df[~self.df["descricao"].isin(produtos_excluidos)] if produtos_excluidos else self.df
+
+        df_filtrado = self.df
+        if self.vars_lojas:
+            lojas_selecionadas = self._lojas_selecionadas()
+            if len(lojas_selecionadas) < len(self.vars_lojas):
+                df_filtrado = df_filtrado[df_filtrado["Loja"].isin(lojas_selecionadas)]
+
+        if self.check_somente_alto_giro.instate(["selected"]):
+            produtos_excluidos = self._produtos_excluidos()
+            if produtos_excluidos:
+                df_filtrado = df_filtrado[~df_filtrado["descricao"].isin(produtos_excluidos)]
+
+        return df_filtrado
 
     # ------------------------------------------------------------------
     # Salvar/carregar configuração da análise (parâmetros + exclusões) em JSON
@@ -1094,6 +1140,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             "periodos_queda": self.entrada_periodos_queda.get(),
             "granularidade": self.var_granularidade.get(),
             "clientes_excluidos": self._clientes_excluidos(),
+            "lojas_selecionadas": self._lojas_selecionadas(),
             # Só os produtos que o usuário de fato clicou (_produtos_manual),
             # com o estado que ele escolheu — NÃO a lista inteira de
             # desmarcados (_produtos_excluidos()), que inclui produtos
@@ -1217,6 +1264,15 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             clientes_excluidos_salvos = set(configuracao.get("clientes_excluidos", []))
             for cliente in self.estado_clientes:
                 self.estado_clientes[cliente] = cliente in clientes_excluidos_salvos
+
+            # None (chave ausente) = configuração salva antes desse recurso
+            # existir — mantém o padrão (todas marcadas) em vez de desmarcar
+            # tudo por engano.
+            lojas_selecionadas_salvas = configuracao.get("lojas_selecionadas")
+            if lojas_selecionadas_salvas is not None:
+                lojas_selecionadas_salvas = set(lojas_selecionadas_salvas)
+                for loja, var in self.vars_lojas.items():
+                    var.set(loja in lojas_selecionadas_salvas)
 
             # _recalcular_classificacoes() já resincroniza "alto giro" com o
             # Grupo 1 do corte de produtos recém-carregado — precisa rodar
@@ -1673,7 +1729,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         df_filtrado = self._dataframe_para_analise()
         if df_filtrado.empty:
-            messagebox.showerror("Relatório", "Nenhuma linha restante após excluir os produtos desmarcados.")
+            messagebox.showerror("Relatório", "Nenhuma linha restante após o filtro de lojas/produtos. Verifique se ao menos uma loja está marcada em Configurações.")
             return
 
         clientes_excluidos = self._clientes_excluidos()
@@ -1688,7 +1744,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._registrar_log(
             f"Iniciando geração do relatório. Granularidades: {granularidades}. "
             f"Relatórios selecionados: {len(chaves_selecionadas)}. "
-            f"Clientes excluídos: {len(clientes_excluidos)}. Produtos excluídos: {len(self._produtos_excluidos())}."
+            f"Clientes excluídos: {len(clientes_excluidos)}. Produtos excluídos: {len(self._produtos_excluidos())}. "
+            f"Lojas incluídas: {len(self._lojas_selecionadas())}/{len(self.vars_lojas)}."
         )
         self._definir_status("Processando análises em segundo plano...")
 

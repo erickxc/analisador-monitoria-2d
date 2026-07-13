@@ -1560,7 +1560,19 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             self._registrar_log("Outra tentativa de abrir o programa foi redirecionada para esta janela.")
         elif comando == "FECHAR":
             self._registrar_log("Fechando a pedido de uma nova instância do programa.")
-            self._ao_fechar_janela()
+            # Adiado pra fora deste loop (_bombear_fila_eventos) de propósito:
+            # _ao_fechar_janela() faz after_cancel(self._id_after_fila), mas
+            # o id atual é exatamente o desta chamada em andamento — não dá
+            # pra cancelar um "after" que já está executando. Chamado direto
+            # aqui, a janela é destruída e o loop, ao voltar da função,
+            # ainda reagenda um novo after(150, ...) na linha final (fora do
+            # try/except) — que dispara 150ms depois contra uma janela já
+            # destruída (TclError "application has been destroyed",
+            # reproduzido e confirmado no log). self.after(0, ...) roda isso
+            # num ciclo novo do event loop, depois que este já terminou (e
+            # já reagendou o próprio after) — daí o cancel funciona de
+            # verdade, contra um agendamento genuinamente pendente.
+            self.after(0, self._ao_fechar_janela)
 
     def _verificar_atualizacoes(self, manual=False):
         # Roda em thread separada (chamada de rede) — nunca deve travar a

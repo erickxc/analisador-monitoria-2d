@@ -527,7 +527,10 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     vs. o mês anterior) e dois clientes de destaque nesse produto nesse
     mês: quem mais comprou (Cliente_Destaque) e quem mais reduziu a
     compra em relação ao mês anterior (Cliente_Em_Queda — "—" se ninguém
-    caiu). desconsiderar_balcao exclui clientes-balcão (venda de
+    caiu), cada um com a variação % da PRÓPRIA compra desse cliente nesse
+    produto (mês atual vs. anterior — não confundir com a variação % do
+    produto como um todo). NaN quando o cliente não comprou nada no mês
+    anterior (sem base de comparação). desconsiderar_balcao exclui clientes-balcão (venda de
     balcão/consumidor final, ver REGEX_BALCAO) da escolha desses dois
     clientes — sem isso, "BALCAO AVULSO" domina como destaque/queda na
     maioria dos produtos, sem ser um cliente real e endereçável.
@@ -538,7 +541,8 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     para o próximo maior comprador que não esteja em queda.
     """
     colunas_vazias = ["descricao", "Receita_Atual", "Status", "Variacao_Percentual",
-                       "Cliente_Destaque", "Cliente_Em_Queda"]
+                       "Cliente_Destaque", "Variacao_Percentual_Cliente_Destaque",
+                       "Cliente_Em_Queda", "Variacao_Percentual_Cliente_Em_Queda"]
     periodos_ordenados = _ordenar_periodos(df["Periodo_Mensal"].unique(), "Mensal")
     if len(periodos_ordenados) < 2:
         return pd.DataFrame(columns=colunas_vazias)
@@ -579,15 +583,26 @@ def status_alto_giro(df, desconsiderar_balcao=False):
         periodo_anterior, pd.Series(0.0, index=pivot_cliente.index)
     ).values
     tabela_cliente["Reducao_Cliente"] = tabela_cliente["Receita_Anterior_Cliente"] - tabela_cliente["Receita_Atual_Cliente"]
+    # Variação % DO CLIENTE nesse produto (não confundir com a variação % do
+    # produto como um todo, já calculada acima em resultado["Variacao_Percentual"]
+    # — aqui é só a compra desse cliente específico, mês atual vs. anterior).
+    tabela_cliente["Variacao_Percentual_Cliente"] = np.where(
+        tabela_cliente["Receita_Anterior_Cliente"] > 0,
+        (tabela_cliente["Receita_Atual_Cliente"] - tabela_cliente["Receita_Anterior_Cliente"])
+        / tabela_cliente["Receita_Anterior_Cliente"] * 100,
+        np.nan,
+    )
     if desconsiderar_balcao:
         tabela_cliente = tabela_cliente[~tabela_cliente["Cliente"].str.contains(REGEX_BALCAO, na=False)]
 
-    em_queda_cliente = (
+    em_queda_ordenado = (
         tabela_cliente[tabela_cliente["Reducao_Cliente"] > 0]
         .sort_values("Reducao_Cliente", ascending=False)
         .drop_duplicates("descricao")
-        .set_index("descricao")["Cliente"]
+        .set_index("descricao")
     )
+    em_queda_cliente = em_queda_ordenado["Cliente"]
+    variacao_em_queda = em_queda_ordenado["Variacao_Percentual_Cliente"]
 
     # Um cliente em queda não pode ser também o "destaque" do mesmo
     # produto — mesmo sendo o maior comprador do mês, sua própria compra
@@ -598,18 +613,23 @@ def status_alto_giro(df, desconsiderar_balcao=False):
         (tabela_cliente["Receita_Atual_Cliente"] > 0)
         & (tabela_cliente["Cliente"] != tabela_cliente["_em_queda_do_produto"])
     ]
-    destaque = (
+    destaque_ordenado = (
         candidatos_destaque
         .sort_values("Receita_Atual_Cliente", ascending=False)
         .drop_duplicates("descricao")
-        .set_index("descricao")["Cliente"]
+        .set_index("descricao")
     )
+    destaque = destaque_ordenado["Cliente"]
+    variacao_destaque = destaque_ordenado["Variacao_Percentual_Cliente"]
 
     resultado["Cliente_Destaque"] = resultado["descricao"].map(destaque).fillna("—")
+    resultado["Variacao_Percentual_Cliente_Destaque"] = resultado["descricao"].map(variacao_destaque)
     resultado["Cliente_Em_Queda"] = resultado["descricao"].map(em_queda_cliente).fillna("—")
+    resultado["Variacao_Percentual_Cliente_Em_Queda"] = resultado["descricao"].map(variacao_em_queda)
 
     resultado = resultado[["descricao", "Receita_Atual", "Status", "Variacao_Percentual",
-                            "Cliente_Destaque", "Cliente_Em_Queda"]]
+                            "Cliente_Destaque", "Variacao_Percentual_Cliente_Destaque",
+                            "Cliente_Em_Queda", "Variacao_Percentual_Cliente_Em_Queda"]]
     resultado.sort_values("Receita_Atual", ascending=False, inplace=True)
     resultado.reset_index(drop=True, inplace=True)
     return resultado
@@ -1707,7 +1727,9 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 "Receita_Atual": "Receita Atual",
                 "Variacao_Percentual": "% de Variação",
                 "Cliente_Destaque": "Cliente Destaque",
+                "Variacao_Percentual_Cliente_Destaque": "% Variação do Cliente Destaque",
                 "Cliente_Em_Queda": "Cliente em Queda",
+                "Variacao_Percentual_Cliente_Em_Queda": "% Variação do Cliente em Queda",
             })
 
         abc = None

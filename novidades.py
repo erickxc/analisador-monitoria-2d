@@ -96,4 +96,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.13": [
         "Adiciona barra de rolagem à lista de relatórios da tela 'Relatório Padrão': a correção da v1.6.12 garantiu que o botão 'Gerar Relatório Padrão' nunca mais fique sem espaço, mas em janelas pequenas a lista em si podia ficar cortada, sem como ver os relatórios de baixo. Agora dá para rolar até todos eles.",
     ],
+    "1.6.14": [
+        "Alto Giro: novas colunas '% Variação do Cliente Destaque' e '% Variação do Cliente em Queda' — a variação de compra DAQUELE cliente específico nesse produto (mês atual vs. anterior), separado da variação % do produto como um todo.",
+    ],
 }

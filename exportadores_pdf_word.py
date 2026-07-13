@@ -49,6 +49,18 @@ def _formatar_numero_br(valor):
     return texto
 
 
+def _titulo_coluna(nome):
+    """
+    Nome de coluna pronto pra exibir num cabeçalho de tabela. A maioria das
+    colunas já vem com nome legível ("Receita Atual"), mas algumas usam
+    PascalCase_Com_Underscore internamente (ex.: "Poder_De_Compra",
+    "Percentual_Acumulado") e apareciam assim mesmo, cru, no PDF/Word —
+    só o título da seção passava por esse tratamento, não o cabeçalho da
+    tabela em si.
+    """
+    return str(nome).replace("_", " ")
+
+
 def _largura_maior_palavra(texto, fonte="Helvetica-Bold", tamanho=8.5):
     """
     Largura (em pontos) da maior palavra de um texto, na fonte/tamanho dados.
@@ -267,9 +279,10 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
                 for coluna in colunas
             ]
 
+            titulos_colunas = [_titulo_coluna(coluna) for coluna in colunas]
             linha_cabecalho = [
-                Paragraph(str(coluna), estilo_cabecalho_numero if numerica else estilo_cabecalho_texto)
-                for coluna, numerica in zip(colunas, eh_numerica)
+                Paragraph(titulo, estilo_cabecalho_numero if numerica else estilo_cabecalho_texto)
+                for titulo, numerica in zip(titulos_colunas, eh_numerica)
             ]
             linhas_formatadas = []
             for _, linha in df_limitado.iterrows():
@@ -294,7 +307,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
             largura_numerica = 2.3 * cm
             largura_texto = max((largura_util - largura_numerica * n_numericas) / max(n_texto, 1), 2.6 * cm)
             padding_celula = 14 + 6  # LEFTPADDING + RIGHTPADDING da tabela + margem de segurança, em pontos
-            larguras_minimas = [_largura_maior_palavra(coluna) + padding_celula for coluna in colunas]
+            larguras_minimas = [_largura_maior_palavra(titulo) + padding_celula for titulo in titulos_colunas]
             larguras_base = [
                 max(largura_numerica if numerica else largura_texto, minima)
                 for numerica, minima in zip(eh_numerica, larguras_minimas)
@@ -428,7 +441,7 @@ def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, no
                 pass
             celulas_cabecalho = tabela.rows[0].cells
             for i, coluna in enumerate(colunas):
-                celulas_cabecalho[i].text = str(coluna)
+                celulas_cabecalho[i].text = _titulo_coluna(coluna)
                 celulas_cabecalho[i].paragraphs[0].runs[0].bold = True
 
             for _, linha in df_limitado.iterrows():

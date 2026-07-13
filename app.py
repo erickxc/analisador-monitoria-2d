@@ -1762,15 +1762,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     }
 
     def _rotulo_amigavel_relatorio(self, chave):
-        for _categoria, itens in CATALOGO_RELATORIOS:
-            for chave_item, titulo in itens:
-                if chave_item == chave:
-                    return titulo
-        rotulos_extra = {
-            "migracao_resumo": "Migração de Grupo — Resumo",
-            "migracao_score_clientes": "Migração de Grupo — Score por Cliente",
-        }
-        return rotulos_extra.get(chave, NOMES_ANALISE.get(chave, chave))
+        return ROTULOS_RELATORIO_PDF_WORD.get(chave, NOMES_ANALISE.get(chave, chave))
 
     def _categoria_do_relatorio(self, chave):
         for categoria, itens in CATALOGO_RELATORIOS:
@@ -2076,14 +2068,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             elif formato == "PDF":
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_pdf(
-                    caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
+                    caminho_saida, resultados_filtrados, ROTULOS_RELATORIO_PDF_WORD, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
                     descricao_analise=DESCRICAO_ANALISE,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
-                    caminho_saida, resultados_filtrados, NOMES_ANALISE, nome_usuario=self.perfil.get("nome", ""),
+                    caminho_saida, resultados_filtrados, ROTULOS_RELATORIO_PDF_WORD, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
                     descricao_analise=DESCRICAO_ANALISE,
                 )
@@ -2318,6 +2310,21 @@ NOMES_ANALISE = {
     "correlacao_produto_cliente": "Correlacao_Prod_Cliente",
     "impacto_financeiro_churn": "Impacto_Financeiro_Churn",
 }
+
+# Título de seção em PDF/Word: diferente de NOMES_ANALISE (nome de aba do
+# Excel — sem acento, com "_" — restrição de caracteres de aba, não de
+# leitura), aqui é o mesmo texto descritivo que o usuário já vê nos
+# checkboxes do catálogo (Relatório Padrão) e no combo do Visualizar
+# Relatório. Antes, PDF/Word usavam NOMES_ANALISE.replace("_", " ") e
+# mostravam títulos tipo "Erosao Geral"/"Migracao ABC" — sem acento e sem a
+# descrição completa, uma inconsistência visível num documento pra cliente.
+ROTULOS_RELATORIO_PDF_WORD = {
+    chave: titulo for _categoria, itens in CATALOGO_RELATORIOS for chave, titulo in itens
+}
+ROTULOS_RELATORIO_PDF_WORD.update({
+    "migracao_resumo": "Migração de Grupo — Resumo",
+    "migracao_score_clientes": "Migração de Grupo — Score por Cliente",
+})
 
 # Descrição curta (metodologia em 1-2 linhas) de cada relatório — único
 # lugar mantido, reaproveitado pelos três exportadores (Excel/PDF/Word) pra

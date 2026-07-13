@@ -516,32 +516,40 @@ def produtos_alta_e_queda(df, granularidade="Mensal", top_n=10):
     return em_alta, em_queda
 
 
-def status_alto_giro(df, desconsiderar_balcao=False):
+def status_alto_giro(df, desconsiderar_balcao=False, clientes_grupo1=None, mapa_faixa_cliente=None):
     """
     Relatório executivo, sem granularidade (sempre por mês-calendário):
     para cada produto presente em df (o chamador já filtra pra só os de
     alto giro — esta função não faz corte de produto nenhum, só reflete o
     que recebe; desmarcar um produto na tela some com ele daqui
     automaticamente, sem precisar de lógica de "substituição"), mostra a
-    receita do último mês completo, se está em alta ou queda (variação %
-    vs. o mês anterior) e dois clientes de destaque nesse produto nesse
-    mês: quem mais comprou (Cliente_Destaque) e quem mais reduziu a
-    compra em relação ao mês anterior mas AINDA comprou algo esse mês
-    (Cliente_Em_Queda — exige Receita_Atual_Cliente > 0; um cliente que
-    foi a zero não conta aqui, isso é assunto de Erosão/Sem Venda —
-    "—" se ninguém se encaixar), cada um com a variação % da PRÓPRIA
-    compra desse cliente nesse produto (mês atual vs. anterior — não
-    confundir com a variação % do produto como um todo). NaN quando o
-    cliente não comprou nada no mês anterior (sem base de comparação).
-    desconsiderar_balcao exclui clientes-balcão (venda de
-    balcão/consumidor final, ver REGEX_BALCAO) da escolha desses dois
-    clientes — sem isso, "BALCAO AVULSO" domina como destaque/queda na
-    maioria dos produtos, sem ser um cliente real e endereçável.
+    receita do último mês completo e se está em alta ou queda (variação %
+    vs. o mês anterior) — isso sim considerando só clientes do Grupo 1
+    (clientes_grupo1, se informado; None = todos os clientes).
 
-    Cliente_Destaque nunca repete o mesmo nome de Cliente_Em_Queda no
-    mesmo produto: mesmo sendo o maior comprador do mês, um cliente cuja
-    própria compra caiu não é "destaque" nesse produto — o posto passa
-    para o próximo maior comprador que não esteja em queda.
+    Cliente_Destaque e Cliente_Em_Queda são outra métrica: não é quem tem
+    maior faturamento, é quem mais CRESCEU (Destaque) e quem mais CAIU
+    (Em Queda) em % de variação da própria compra desse produto (mês atual
+    vs. anterior) — por isso consideram clientes de TODOS os grupos, não só
+    Grupo 1 (o corte de grupo vale pra receita/status do produto, não pra
+    essa comparação de crescimento/queda individual). Exigem compra > 0 nos
+    DOIS períodos (desconsidera quem apareceu do zero ou sumiu de vez — isso
+    é assunto de Erosão/Sem Venda, não de crescimento/queda comparável) e
+    Destaque exige variação positiva / Em Queda exige variação negativa
+    ("—" quando ninguém se encaixa). Cliente_Destaque nunca repete o mesmo
+    nome de Cliente_Em_Queda no mesmo produto.
+
+    mapa_faixa_cliente (dict Cliente -> Faixa, de classificar_clientes_
+    agregado): quando informado, prioriza Grupo 1 > Grupo 2 > Grupo 3 >
+    demais na escolha de Destaque/Em Queda — só usa um cliente de faixa
+    "pior" quando não há nenhum candidato válido na faixa melhor para
+    aquele produto. Dentro da mesma faixa, desempate por maior % de
+    variação. None = ordena só por % de variação, sem prioridade de faixa.
+
+    desconsiderar_balcao exclui clientes-balcão (venda de balcão/consumidor
+    final, ver REGEX_BALCAO) da escolha desses dois clientes — sem isso,
+    "BALCAO AVULSO" domina como destaque/queda na maioria dos produtos, sem
+    ser um cliente real e endereçável.
     """
     colunas_vazias = ["descricao", "Receita_Atual", "Status", "Variacao_Percentual",
                        "Cliente_Destaque", "Variacao_Percentual_Cliente_Destaque",
@@ -553,7 +561,8 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     periodo_anterior, periodo_atual = periodos_ordenados[-2], periodos_ordenados[-1]
     base = df[df["Periodo_Mensal"].isin([periodo_anterior, periodo_atual])]
 
-    por_produto = base.groupby(["descricao", "Periodo_Mensal"], as_index=False)["Receita"].sum()
+    base_produto = base if clientes_grupo1 is None else base[base["Cliente"].isin(clientes_grupo1)]
+    por_produto = base_produto.groupby(["descricao", "Periodo_Mensal"], as_index=False)["Receita"].sum()
     pivot_produto = por_produto.pivot(index="descricao", columns="Periodo_Mensal", values="Receita").fillna(0)
     receita_atual = pivot_produto.get(periodo_atual, pd.Series(0.0, index=pivot_produto.index))
     receita_anterior = pivot_produto.get(periodo_anterior, pd.Series(0.0, index=pivot_produto.index))
@@ -574,9 +583,8 @@ def status_alto_giro(df, desconsiderar_balcao=False):
         default="Estável",
     )
 
-    # Cliente destaque: quem mais comprou esse produto no mês atual.
-    # Cliente em queda: quem mais reduziu a compra desse produto em
-    # relação ao mês anterior (só entra quem realmente caiu).
+    # Cliente destaque/em queda usam TODOS os clientes (todos os grupos),
+    # não só base_produto (Grupo 1) — ver docstring.
     por_produto_cliente = base.groupby(["descricao", "Cliente", "Periodo_Mensal"], as_index=False)["Receita"].sum()
     pivot_cliente = por_produto_cliente.pivot_table(
         index=["descricao", "Cliente"], columns="Periodo_Mensal", values="Receita", fill_value=0,
@@ -585,7 +593,6 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     tabela_cliente["Receita_Anterior_Cliente"] = pivot_cliente.get(
         periodo_anterior, pd.Series(0.0, index=pivot_cliente.index)
     ).values
-    tabela_cliente["Reducao_Cliente"] = tabela_cliente["Receita_Anterior_Cliente"] - tabela_cliente["Receita_Atual_Cliente"]
     # Variação % DO CLIENTE nesse produto (não confundir com a variação % do
     # produto como um todo, já calculada acima em resultado["Variacao_Percentual"]
     # — aqui é só a compra desse cliente específico, mês atual vs. anterior).
@@ -598,30 +605,53 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     if desconsiderar_balcao:
         tabela_cliente = tabela_cliente[~tabela_cliente["Cliente"].str.contains(REGEX_BALCAO, na=False)]
 
-    # Cliente_Em_Queda exige compra > 0 no mês atual, além da redução em si —
-    # um cliente que foi a zero não está "comprando menos", parou de comprar
-    # esse produto (isso é assunto de Erosão/Sem Venda, não de Alto Giro).
+    # Só entram candidatos com compra > 0 nos DOIS períodos — desconsidera
+    # quem apareceu do zero ou sumiu de vez (sem base de comparação real).
+    comparaveis = tabela_cliente[
+        (tabela_cliente["Receita_Anterior_Cliente"] > 0) & (tabela_cliente["Receita_Atual_Cliente"] > 0)
+    ].copy()
+
+    # Prioridade de faixa (Grupo 1 > Grupo 2 > Grupo 3 > demais): número menor
+    # = mais prioridade. "Grupo N" -> N; qualquer outra coisa (Demais, Balcão,
+    # cliente fora da classificação) ou mapa_faixa_cliente=None -> sem
+    # prioridade nenhuma (todo mundo empata, desempate cai 100% no % de
+    # variação, mesmo comportamento de antes desse parâmetro existir).
+    def _prioridade_faixa(faixa):
+        if isinstance(faixa, str) and faixa.startswith("Grupo "):
+            try:
+                return int(faixa.split(" ")[1])
+            except ValueError:
+                return 999
+        return 999
+
+    if mapa_faixa_cliente:
+        comparaveis["_prioridade_grupo"] = comparaveis["Cliente"].map(mapa_faixa_cliente).apply(_prioridade_faixa)
+    else:
+        comparaveis["_prioridade_grupo"] = 999
+
+    # Cliente_Em_Queda: prioriza faixa (Grupo 1 primeiro), desempate por
+    # maior queda %. Exige variação negativa — "—" se ninguém realmente caiu.
     em_queda_ordenado = (
-        tabela_cliente[(tabela_cliente["Reducao_Cliente"] > 0) & (tabela_cliente["Receita_Atual_Cliente"] > 0)]
-        .sort_values("Reducao_Cliente", ascending=False)
+        comparaveis[comparaveis["Variacao_Percentual_Cliente"] < 0]
+        .sort_values(["_prioridade_grupo", "Variacao_Percentual_Cliente"], ascending=[True, True])
         .drop_duplicates("descricao")
         .set_index("descricao")
     )
     em_queda_cliente = em_queda_ordenado["Cliente"]
     variacao_em_queda = em_queda_ordenado["Variacao_Percentual_Cliente"]
 
-    # Um cliente em queda não pode ser também o "destaque" do mesmo
-    # produto — mesmo sendo o maior comprador do mês, sua própria compra
-    # caiu, então o posto de destaque passa para o próximo maior
-    # comprador (que não esteja em queda nesse produto).
-    tabela_cliente["_em_queda_do_produto"] = tabela_cliente["descricao"].map(em_queda_cliente)
-    candidatos_destaque = tabela_cliente[
-        (tabela_cliente["Receita_Atual_Cliente"] > 0)
-        & (tabela_cliente["Cliente"] != tabela_cliente["_em_queda_do_produto"])
+    # Cliente_Destaque: mesma prioridade de faixa, desempate por maior
+    # crescimento %. Exige variação positiva. Um cliente em queda não pode
+    # ser também o "destaque" do mesmo produto — o posto passa pro próximo
+    # candidato que não esteja em queda nesse produto.
+    comparaveis["_em_queda_do_produto"] = comparaveis["descricao"].map(em_queda_cliente)
+    candidatos_destaque = comparaveis[
+        (comparaveis["Variacao_Percentual_Cliente"] > 0)
+        & (comparaveis["Cliente"] != comparaveis["_em_queda_do_produto"])
     ]
     destaque_ordenado = (
         candidatos_destaque
-        .sort_values("Receita_Atual_Cliente", ascending=False)
+        .sort_values(["_prioridade_grupo", "Variacao_Percentual_Cliente"], ascending=[True, False])
         .drop_duplicates("descricao")
         .set_index("descricao")
     )
@@ -1728,7 +1758,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             )
 
         if precisa("alto_giro"):
-            logar(f"[{granularidade}] Calculando status de alto giro (somente clientes Grupo 1)...")
+            logar(f"[{granularidade}] Calculando status de alto giro...")
             # Alto Giro reflete só o comportamento dos clientes mais importantes
             # (Grupo 1 da classificação agregada, mesmo corte usado em Poder de
             # Compra/Sem Venda/prévia de Configurações) — um produto de alto giro
@@ -1746,8 +1776,14 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 df, cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
             )
             clientes_grupo1 = set(classificacao_grupo1.loc[classificacao_grupo1["Faixa"] == "Grupo 1", "Cliente"])
-            df_alto_giro = df_periodo[df_periodo["Cliente"].isin(clientes_grupo1)]
-            analises["alto_giro"] = status_alto_giro(df_alto_giro, desconsiderar_balcao=desconsiderar_balcao).rename(columns={
+            mapa_faixa_cliente = dict(zip(classificacao_grupo1["Cliente"], classificacao_grupo1["Faixa"]))
+            # Grupo 1 vale pra receita/status do produto — Cliente Destaque/Em
+            # Queda usam todos os clientes, priorizando Grupo 1 > 2 > 3 > demais
+            # (ver docstring de status_alto_giro).
+            analises["alto_giro"] = status_alto_giro(
+                df_periodo, desconsiderar_balcao=desconsiderar_balcao,
+                clientes_grupo1=clientes_grupo1, mapa_faixa_cliente=mapa_faixa_cliente,
+            ).rename(columns={
                 "Receita_Atual": "Receita Atual",
                 "Variacao_Percentual": "% de Variação",
                 "Cliente_Destaque": "Cliente Destaque",

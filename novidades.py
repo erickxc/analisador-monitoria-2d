@@ -108,4 +108,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.17": [
         "Alto Giro: 'Cliente em Queda' agora exige que o cliente tenha comprado algo no mês atual (não só reduzido) — um cliente que foi a zero deixa de contar como 'em queda' aqui (isso já é assunto de Erosão/Sem Venda).",
     ],
+    "1.6.18": [
+        "Alto Giro: 'Cliente Destaque' e 'Cliente em Queda' agora são quem mais CRESCEU e quem mais CAIU em % de compra do produto (não mais quem tem maior faturamento) — considerando clientes de todos os grupos, com prioridade Grupo 1 > Grupo 2 > Grupo 3 > demais. Receita/Status do produto continuam só com clientes Grupo 1.",
+    ],
 }

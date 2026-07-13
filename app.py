@@ -181,7 +181,7 @@ GRUPOS_PARAMETROS_RELATORIO = [
         "gatilhos": ("evolucao_produtos", "alertas_queda"),
         "apos": "alertas_queda",
         "campos": [
-            ("entrada_periodos_queda", "Períodos seguidos em queda:", "2", 6),
+            ("entrada_periodos_queda", "Períodos mínimos seguidos em queda:", "2", 6),
             ("entrada_queda_minima_alerta", "Queda mínima em R$ p/ alerta:", "3000", 8),
             ("entrada_top_n_produtos", "Produtos a exibir (top N por tendência):", "", 6),
         ],

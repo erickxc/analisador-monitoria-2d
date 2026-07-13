@@ -75,6 +75,26 @@ def _largura_maior_palavra(texto, fonte="Helvetica-Bold", tamanho=8.5):
     return max(stringWidth(palavra, fonte, tamanho) for palavra in palavras)
 
 
+def _largura_tipica_conteudo(valores, fonte="Helvetica", tamanho=8.5):
+    """
+    Largura (pontos) representativa do conteúdo de uma coluna de TEXTO — não
+    a maior palavra isolada (isso é só a garantia contra quebra no meio da
+    palavra do cabeçalho) nem o valor mais longo de todos (uma única razão
+    social gigante dominaria a largura da coluna inteira, empurrando as
+    outras) — o percentil 90 dos comprimentos reais da coluna. Usado só pra
+    colunas de texto; colunas numéricas usam o valor MÁXIMO mesmo (ver
+    chamador) porque números não têm outliers de comprimento do mesmo jeito
+    que nomes de cliente/produto, e um número cortando no meio fica pior que
+    uma coluna de texto um pouco mais larga que o necessário.
+    """
+    textos = [str(v) for v in valores if v is not None and str(v) != "nan"]
+    if not textos:
+        return 0
+    larguras = sorted(stringWidth(texto, fonte, tamanho) for texto in textos)
+    indice = min(int(len(larguras) * 0.9), len(larguras) - 1)
+    return larguras[indice]
+
+
 def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa="", descricao_analise=None):
     import pandas as pd
     from reportlab.lib.pagesizes import A4, landscape
@@ -86,6 +106,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
         SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak,
         HRFlowable, KeepTogether,
     )
+    from reportlab.platypus.tableofcontents import TableOfContents
 
     colunas_moeda_por_analise = colunas_moeda_por_analise or {}
     descricao_analise = descricao_analise or {}
@@ -120,7 +141,30 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
         canvas.drawRightString(largura_pagina - margem_lateral, 0.85 * cm, f"Página {canvas.getPageNumber() - 1}")
         canvas.restoreState()
 
-    doc = SimpleDocTemplate(
+    def _texto_indice_de(flowable):
+        """
+        Procura o marcador _indice_texto (ver mais abaixo) no flowable, ou
+        num dos flowables dentro dele se for um KeepTogether — o título de
+        cada seção vem embrulhado num KeepTogether junto da granularidade/
+        descrição/separador (pra nunca ficar "órfão" no fim de uma página),
+        e afterFlowable só recebe o KeepTogether inteiro, não cada item dele.
+        """
+        marcador = getattr(flowable, "_indice_texto", None)
+        if marcador:
+            return marcador
+        for item in getattr(flowable, "_content", None) or []:
+            marcador = getattr(item, "_indice_texto", None)
+            if marcador:
+                return marcador
+        return None
+
+    class _DocumentoComIndice(SimpleDocTemplate):
+        def afterFlowable(self, flowable):
+            texto_indice = _texto_indice_de(flowable)
+            if texto_indice:
+                self.notify("TOCEntry", (0, texto_indice, self.page))
+
+    doc = _DocumentoComIndice(
         caminho_saida, pagesize=landscape(A4),
         topMargin=2.1 * cm, bottomMargin=1.8 * cm,
         leftMargin=margem_lateral, rightMargin=margem_lateral,
@@ -251,6 +295,28 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
     elementos.append(PageBreak())
 
     # ------------------------------------------------------------------
+    # Índice — só compensa a partir de uns 3-4 relatórios; com 1 ou 2, a
+    # página extra vira um clique a mais sem ganho real de navegação.
+    # ------------------------------------------------------------------
+    total_secoes = sum(len(analises) for analises in resultados_analise.values())
+    if total_secoes > 2:
+        estilo_titulo_indice = ParagraphStyle(
+            "TituloIndice", parent=estilos["Heading1"], fontName="Helvetica-Bold",
+            fontSize=16, textColor=cor_marca, spaceAfter=14,
+        )
+        estilo_entrada_indice = ParagraphStyle(
+            "EntradaIndice", parent=estilos["Normal"], fontName="Helvetica",
+            fontSize=10.5, leading=16, textColor=colors.HexColor("#1a1a1a"),
+        )
+        indice = TableOfContents()
+        indice.levelStyles = [estilo_entrada_indice]
+        # TableOfContents desenha "texto ..... nº" com um separador de pontos
+        # próprio — não precisa de tabela/grid manual.
+        elementos.append(Paragraph("Índice", estilo_titulo_indice))
+        elementos.append(indice)
+        elementos.append(PageBreak())
+
+    # ------------------------------------------------------------------
     # Seções (uma por análise x granularidade)
     # ------------------------------------------------------------------
     for granularidade, analises in resultados_analise.items():
@@ -258,7 +324,9 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
             titulo = nomes_analise.get(chave, chave).replace("_", " ")
             descricao = descricao_analise.get(chave)
 
-            itens_cabecalho = [Paragraph(titulo, estilo_secao), Paragraph(granularidade, estilo_granularidade)]
+            paragrafo_titulo_secao = Paragraph(titulo, estilo_secao)
+            paragrafo_titulo_secao._indice_texto = f"{titulo} — {granularidade}"
+            itens_cabecalho = [paragrafo_titulo_secao, Paragraph(granularidade, estilo_granularidade)]
             if descricao:
                 itens_cabecalho.append(Paragraph(descricao, estilo_descricao_secao))
             itens_cabecalho.append(Spacer(1, 6))
@@ -284,6 +352,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
                 Paragraph(titulo, estilo_cabecalho_numero if numerica else estilo_cabecalho_texto)
                 for titulo, numerica in zip(titulos_colunas, eh_numerica)
             ]
+            textos_por_coluna = {coluna: [] for coluna in colunas}
             linhas_formatadas = []
             for _, linha in df_limitado.iterrows():
                 linha_fmt = []
@@ -297,21 +366,36 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
                         texto_valor = _formatar_numero_br(valor)
                     else:
                         texto_valor = str(valor)
+                    textos_por_coluna[coluna].append(texto_valor)
                     estilo_celula = estilo_celula_numero if numerica else estilo_celula_texto
                     linha_fmt.append(Paragraph(texto_valor, estilo_celula))
                 linhas_formatadas.append(linha_fmt)
             dados_tabela = [linha_cabecalho] + linhas_formatadas
 
-            n_numericas = sum(eh_numerica)
-            n_texto = len(colunas) - n_numericas
-            largura_numerica = 2.3 * cm
-            largura_texto = max((largura_util - largura_numerica * n_numericas) / max(n_texto, 1), 2.6 * cm)
+            # Largura por coluna baseada no CONTEÚDO real, não num split
+            # uniforme entre colunas de texto — antes, "Grupo" (valores
+            # curtos como "Demais") recebia a mesma largura que "Cliente"
+            # (razões sociais longas), sobrando espaço em branco enorme à
+            # direita da tabela em vez de ir pra quem precisa. Numéricas
+            # usam o valor MÁXIMO formatado da própria coluna (não um
+            # tamanho fixo de 2,3cm) — é isso que também corrige colunas de
+            # moeda quebrando em 2 linhas pra valores grandes e ficando numa
+            # linha só pra valores pequenos, dentro da mesma tabela.
             padding_celula = 14 + 6  # LEFTPADDING + RIGHTPADDING da tabela + margem de segurança, em pontos
             larguras_minimas = [_largura_maior_palavra(titulo) + padding_celula for titulo in titulos_colunas]
-            larguras_base = [
-                max(largura_numerica if numerica else largura_texto, minima)
-                for numerica, minima in zip(eh_numerica, larguras_minimas)
-            ]
+            LARGURA_MIN_COLUNA = 2.3 * cm
+            LARGURA_MAX_COLUNA_TEXTO = 9.0 * cm
+            larguras_base = []
+            for coluna, titulo_largura_minima, numerica in zip(colunas, larguras_minimas, eh_numerica):
+                textos = textos_por_coluna[coluna]
+                if numerica:
+                    largura_conteudo = max((stringWidth(t, "Helvetica", 8.5) for t in textos), default=0)
+                else:
+                    largura_conteudo = _largura_tipica_conteudo(textos)
+                largura = max(titulo_largura_minima, largura_conteudo + padding_celula, LARGURA_MIN_COLUNA)
+                if not numerica:
+                    largura = min(largura, LARGURA_MAX_COLUNA_TEXTO)
+                larguras_base.append(largura)
 
             soma_base = sum(larguras_base)
             if soma_base > largura_util:
@@ -325,6 +409,22 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
                 if sobra_total > 0:
                     fator_corte = min(excesso / sobra_total, 1.0)
                     larguras = [b - s * fator_corte for b, s in zip(larguras_base, sobras)]
+                else:
+                    larguras = larguras_base
+            elif soma_base < largura_util:
+                # Sobra espaço: distribui só entre as colunas de TEXTO,
+                # proporcional à largura-base de cada uma — não entre as
+                # numéricas, que já têm exatamente a largura que seu maior
+                # valor formatado precisa (dar mais só abriria vazio dentro
+                # da própria célula, sem ganho nenhum de legibilidade).
+                indices_texto = [indice for indice, numerica in enumerate(eh_numerica) if not numerica]
+                if indices_texto:
+                    sobra = largura_util - soma_base
+                    pesos = [larguras_base[indice] for indice in indices_texto]
+                    soma_pesos = sum(pesos) or 1
+                    larguras = list(larguras_base)
+                    for indice, peso in zip(indices_texto, pesos):
+                        larguras[indice] += sobra * (peso / soma_pesos)
                 else:
                     larguras = larguras_base
             else:
@@ -358,7 +458,7 @@ def exportar_relatorio_pdf(caminho_saida, resultados_analise, nomes_analise, nom
                 ))
             elementos.append(Spacer(1, 24))
 
-    doc.build(elementos, onFirstPage=lambda c, d: None, onLaterPages=_cabecalho_rodape)
+    doc.multiBuild(elementos, onFirstPage=lambda c, d: None, onLaterPages=_cabecalho_rodape)
 
 
 def exportar_relatorio_word(caminho_saida, resultados_analise, nomes_analise, nome_usuario="", colunas_moeda_por_analise=None, nome_empresa="", descricao_analise=None):

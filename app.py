@@ -1722,6 +1722,13 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.combo_visualizar_granularidade = ttk.Combobox(barra, state="readonly", width=12, values=[])
         self.combo_visualizar_granularidade.pack(side="left", padx=(4, 12))
         self.combo_visualizar_granularidade.bind(
+            "<<ComboboxSelected>>", lambda _evento: self._popular_combo_visualizar_categoria()
+        )
+
+        ttk.Label(barra, text="Categoria:").pack(side="left")
+        self.combo_visualizar_categoria = ttk.Combobox(barra, state="readonly", width=18, values=[])
+        self.combo_visualizar_categoria.pack(side="left", padx=(4, 12))
+        self.combo_visualizar_categoria.bind(
             "<<ComboboxSelected>>", lambda _evento: self._popular_combo_visualizar_relatorio()
         )
 
@@ -1746,6 +1753,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         barra_v.grid(row=0, column=1, sticky="ns")
         barra_h.grid(row=1, column=0, sticky="ew")
 
+    # Sub-produtos automáticos (gerados junto de migracao_abc, sem checkbox
+    # próprio no catálogo — ver gerar_analises_completas) não aparecem em
+    # CATALOGO_RELATORIOS; herdam a categoria de quem os gera.
+    CATEGORIA_EXTRA_POR_CHAVE = {
+        "migracao_resumo": "Relatórios Gerais",
+        "migracao_score_clientes": "Relatórios Gerais",
+    }
+
     def _rotulo_amigavel_relatorio(self, chave):
         for _categoria, itens in CATALOGO_RELATORIOS:
             for chave_item, titulo in itens:
@@ -1757,6 +1772,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         }
         return rotulos_extra.get(chave, NOMES_ANALISE.get(chave, chave))
 
+    def _categoria_do_relatorio(self, chave):
+        for categoria, itens in CATALOGO_RELATORIOS:
+            if any(chave_item == chave for chave_item, _titulo in itens):
+                return categoria
+        return self.CATEGORIA_EXTRA_POR_CHAVE.get(chave, "Outros")
+
     def _popular_visualizador_relatorio(self):
         """Chamado sempre que self.resultados_analise muda (nova geração concluída) -- repopula os combos."""
         if not self.resultados_analise:
@@ -1765,17 +1786,39 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.combo_visualizar_granularidade["values"] = granularidades
         if self.combo_visualizar_granularidade.get() not in granularidades:
             self.combo_visualizar_granularidade.set(granularidades[0])
+        self._popular_combo_visualizar_categoria()
+
+    def _popular_combo_visualizar_categoria(self):
+        granularidade = self.combo_visualizar_granularidade.get()
+        analises = self.resultados_analise.get(granularidade, {}) if self.resultados_analise else {}
+        categorias_presentes = []
+        for chave in analises.keys():
+            categoria = self._categoria_do_relatorio(chave)
+            if categoria not in categorias_presentes:
+                categorias_presentes.append(categoria)
+        # Sempre na mesma ordem do catálogo (Gerais antes de Gerenciais),
+        # não a ordem de inserção do dict de resultados.
+        ordem_catalogo = [categoria for categoria, _itens in CATALOGO_RELATORIOS]
+        categorias = [c for c in ordem_catalogo if c in categorias_presentes]
+        categorias += [c for c in categorias_presentes if c not in categorias]
+
+        self.combo_visualizar_categoria["values"] = categorias
+        if categorias and self.combo_visualizar_categoria.get() not in categorias:
+            self.combo_visualizar_categoria.set(categorias[0])
         self._popular_combo_visualizar_relatorio()
 
     def _popular_combo_visualizar_relatorio(self):
         granularidade = self.combo_visualizar_granularidade.get()
+        categoria = self.combo_visualizar_categoria.get()
         analises = self.resultados_analise.get(granularidade, {}) if self.resultados_analise else {}
-        chaves = list(analises.keys())
+        chaves = [chave for chave in analises.keys() if self._categoria_do_relatorio(chave) == categoria]
         rotulos = [self._rotulo_amigavel_relatorio(chave) for chave in chaves]
         self._mapa_visualizar_rotulo_para_chave = dict(zip(rotulos, chaves))
         self.combo_visualizar_relatorio["values"] = rotulos
         if rotulos and self.combo_visualizar_relatorio.get() not in rotulos:
             self.combo_visualizar_relatorio.set(rotulos[0])
+        elif not rotulos:
+            self.combo_visualizar_relatorio.set("")
         self._exibir_tabela_visualizar()
 
     def _formatar_celula_visualizar(self, nome_coluna, valor, eh_moeda):

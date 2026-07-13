@@ -2038,6 +2038,16 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._chaves_selecionadas_geracao = chaves_selecionadas
         self._formato_geracao = self.var_formato_exportacao.get()
         self._nome_empresa_geracao = self.entrada_nome_empresa.get().strip()
+        # Guardado pra reconstruir as descrições dinâmicas na hora de exportar
+        # (ver _construir_descricoes_dinamicas) — sem isso, a descrição de
+        # Erosão/Alertas de Queda exportada sempre dizia os valores padrão
+        # (ex.: "caiu 50%+"), mesmo quando o usuário configurava outro valor.
+        self._parametros_geracao = {
+            "reducao_minima_erosao": reducao_minima_erosao,
+            "queda_minima_erosao": queda_minima_erosao,
+            "queda_minima_alerta": queda_minima_alerta,
+            "periodos_queda": periodos_queda,
+        }
 
         self.thread_em_execucao = True
         self.botao_gerar.config(state="disabled")
@@ -2120,6 +2130,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         # aqui já vem filtrado — nada a recortar de novo.
         resultados_filtrados = resultados
 
+        descricoes_geracao = _construir_descricoes_dinamicas(getattr(self, "_parametros_geracao", {}))
+
         self._definir_status(f"Exportando {formato}...")
         self._registrar_log(f"Exportando {formato} para: {caminho_saida}")
         try:
@@ -2127,20 +2139,21 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 exportar_relatorio_excel(
                     caminho_saida, resultados_filtrados, self.relatorios_personalizados,
                     nome_usuario=self.perfil.get("nome", ""), nome_empresa=nome_empresa,
+                    descricao_analise=descricoes_geracao,
                 )
             elif formato == "PDF":
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_pdf(
                     caminho_saida, resultados_filtrados, ROTULOS_RELATORIO_PDF_WORD, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
-                    descricao_analise=DESCRICAO_ANALISE,
+                    descricao_analise=descricoes_geracao,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
                     caminho_saida, resultados_filtrados, ROTULOS_RELATORIO_PDF_WORD, nome_usuario=self.perfil.get("nome", ""),
                     colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
-                    descricao_analise=DESCRICAO_ANALISE,
+                    descricao_analise=descricoes_geracao,
                 )
         except Exception as exc:
             self.logger.exception(f"Falha ao exportar {formato}")
@@ -2412,6 +2425,39 @@ DESCRICAO_ANALISE = {
     "impacto_financeiro_churn": "KPIs agregados do impacto financeiro da erosão de clientes: maior retração individual, receita total sob risco e variação global de receita.",
 }
 
+
+def _construir_descricoes_dinamicas(parametros):
+    """
+    Cópia de DESCRICAO_ANALISE com as entradas de erosao_geral/erosao_clientes/
+    alertas_queda reescritas com os valores REALMENTE configurados nesta
+    geração (redução mínima %, queda mínima em R$, períodos consecutivos) —
+    a versão estática sempre dizia "caiu 50%+" mesmo quando o usuário
+    configurava um valor diferente (ex.: 80%), dando a falsa impressão de que
+    o filtro não tinha efeito algum no relatório exportado.
+    """
+    descricoes = dict(DESCRICAO_ANALISE)
+    reducao = parametros.get("reducao_minima_erosao", 50.0)
+    queda_r_erosao = parametros.get("queda_minima_erosao", 0.0)
+    piso_erosao = f" e queda de pelo menos {_formatar_moeda_br(queda_r_erosao)}" if queda_r_erosao > 0 else ""
+    descricoes["erosao_geral"] = (
+        f"Clientes cuja receita total (somando todos os produtos) caiu {reducao:.0f}%+ (ou zerou){piso_erosao} "
+        "em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece."
+    )
+    descricoes["erosao_clientes"] = (
+        f"Clientes cuja compra de um produto caiu {reducao:.0f}%+ (ou zerou){piso_erosao} "
+        "em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece."
+    )
+
+    periodos_queda = parametros.get("periodos_queda", 2)
+    queda_r_alerta = parametros.get("queda_minima_alerta", 0.0)
+    piso_alerta = f", com queda de pelo menos {_formatar_moeda_br(queda_r_alerta)}" if queda_r_alerta > 0 else ""
+    descricoes["alertas_queda"] = (
+        f"Produtos com queda de receita em {periodos_queda}+ períodos consecutivos que persiste até o período "
+        f"mais recente{piso_alerta} — não um histórico antigo já recuperado. Ordenado pelo maior impacto "
+        "financeiro (Queda em R$)."
+    )
+    return descricoes
+
 COLUNAS_MOEDA_POR_ANALISE = {
     "top_produtos": ["Receita"],
     "poder_compra_clientes": ["Poder_De_Compra", "Receita Média Recente (3 meses)"],
@@ -2433,12 +2479,16 @@ COLUNAS_MOEDA_POR_ANALISE = {
 }
 
 
-def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_personalizados=None, nome_usuario="", nome_empresa=""):
+def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_personalizados=None, nome_usuario="", nome_empresa="", descricao_analise=None):
     """
     Gera o arquivo .xlsx com uma aba por (análise x granularidade), formatado
     com cabeçalhos destacados, moeda BRL, largura de coluna automática e a
     logo da empresa em cada aba (mais uma capa de apresentação).
+
+    descricao_analise: dict chave->texto pra sobrepor DESCRICAO_ANALISE (ver
+    _construir_descricoes_dinamicas) — usa os valores padrão se None.
     """
+    descricoes = descricao_analise if descricao_analise is not None else DESCRICAO_ANALISE
     workbook = Workbook()
     workbook.remove(workbook.active)  # remove a aba padrão vazia
     _criar_capa(workbook, resultados_analise, nome_usuario, nome_empresa)
@@ -2453,7 +2503,7 @@ def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_perso
                 continue
             _escrever_dataframe(
                 workbook, nome_aba, df_analise, COLUNAS_MOEDA_POR_ANALISE.get(chave_analise),
-                descricao=DESCRICAO_ANALISE.get(chave_analise),
+                descricao=descricoes.get(chave_analise),
             )
 
     if relatorios_personalizados:

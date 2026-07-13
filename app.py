@@ -13,6 +13,7 @@ import re
 import sys
 import json
 import queue
+import socket
 import logging
 import threading
 import traceback
@@ -217,8 +218,9 @@ def _formatar_moeda_br(valor):
 
 
 class AplicacaoAnaliseFunil(JANELA_BASE):
-    def __init__(self):
+    def __init__(self, servidor_instancia_unica=None):
         super().__init__()
+        self._servidor_instancia_unica = servidor_instancia_unica
         self.title(TITULO_JANELA)
         self._definir_geometria_janela()
         self._definir_icone_janela()
@@ -252,6 +254,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._aplicar_zoom(None)
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar_janela)
+        if self._servidor_instancia_unica is not None:
+            threading.Thread(target=self._escutar_outras_instancias, daemon=True).start()
 
         self._mostrar_novidades_versao()
         threading.Thread(target=self._verificar_atualizacoes, daemon=True).start()
@@ -279,6 +283,11 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             pass
         if self._thread_geracao is not None and self._thread_geracao.is_alive():
             self._thread_geracao.join(timeout=5)
+        if self._servidor_instancia_unica is not None:
+            try:
+                self._servidor_instancia_unica.close()
+            except OSError:
+                pass
         self.logger.info("Aplicação encerrada pelo usuário.")
         self.quit()
         self.destroy()
@@ -1515,9 +1524,43 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     self._ao_falhar_instalacao_atualizacao(dados)
                 elif tipo == "atualizacao_instalacao_ok":
                     self._ao_concluir_instalacao_atualizacao()
+                elif tipo == "comando_instancia_unica":
+                    self._ao_receber_comando_instancia_unica(dados)
         except queue.Empty:
             pass
         self._id_after_fila = self.after(150, self._bombear_fila_eventos)
+
+    def _escutar_outras_instancias(self):
+        """
+        Roda numa thread separada, bloqueada em accept() — quando o usuário
+        tenta abrir uma segunda instância do programa, ela detecta que a
+        porta já está em uso (ver _tentar_registrar_instancia_unica) e, em
+        vez de abrir uma segunda janela, pergunta ao usuário e manda um
+        comando curto pra ESSA instância através dessa conexão. Só posta na
+        fila de eventos — quem manipula a janela de fato é sempre a thread
+        principal (via _bombear_fila_eventos), nunca esta thread.
+        """
+        while True:
+            try:
+                conexao, _endereco = self._servidor_instancia_unica.accept()
+            except OSError:
+                return  # socket fechado (programa encerrando) — sai da thread
+            try:
+                dados = conexao.recv(64).decode("utf-8", errors="ignore").strip()
+            finally:
+                conexao.close()
+            if dados:
+                self.fila_eventos.put(("comando_instancia_unica", dados))
+
+    def _ao_receber_comando_instancia_unica(self, comando):
+        if comando == "ATIVAR":
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+            self._registrar_log("Outra tentativa de abrir o programa foi redirecionada para esta janela.")
+        elif comando == "FECHAR":
+            self._registrar_log("Fechando a pedido de uma nova instância do programa.")
+            self._ao_fechar_janela()
 
     def _verificar_atualizacoes(self, manual=False):
         # Roda em thread separada (chamada de rede) — nunca deve travar a
@@ -1605,14 +1648,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         )
 
     def _ao_concluir_instalacao_atualizacao(self):
-        self._registrar_log("Atualização baixada e instalada. Feche e abra o programa novamente pra usar a nova versão.")
-        self._definir_status("Atualização instalada — abra o programa novamente.")
+        # "Agendada", não "instalada": a troca de arquivo só acontece depois
+        # que este processo fechar (aplicar_atualizacao em atualizacoes.py
+        # roda um .bat em segundo plano que tenta por ~90s) — dizer
+        # "instalada" aqui era enganoso, o log dizia sucesso mesmo quando a
+        # troca falhava (ex.: outra janela do programa ainda aberta travando
+        # o arquivo — não confirmava nada, só que o download deu certo).
+        self._registrar_log("Atualização baixada — troca do arquivo agendada. Feche TODAS as janelas do programa pra ela ser concluída.")
+        self._definir_status("Atualização baixada — feche o programa pra concluir a troca.")
         # O programa não se reabre sozinho de propósito (ver aplicar_atualizacao
         # em atualizacoes.py) — o antivírus bloqueia essa reabertura automática.
         messagebox.showinfo(
-            "Atualização instalada",
-            "A nova versão já foi baixada e instalada.\n\n"
-            "Feche este programa e abra-o novamente pra usar a versão nova.",
+            "Atualização baixada",
+            "A nova versão foi baixada; a troca do arquivo está agendada.\n\n"
+            "Feche TODAS as janelas do programa (não só esta) e abra de novo "
+            "pra usar a versão nova — com qualquer janela aberta, o arquivo "
+            "fica travado e a troca não é concluída.",
         )
         # Fecha em um ciclo separado do loop de eventos, não aqui direto:
         # destruir a janela no meio da leitura da fila (_bombear_fila_eventos)
@@ -2430,11 +2481,133 @@ def _pedir_permissao_primeira_execucao():
     recursos.definir_permissao_dados_locais(permitido)
 
 
+# Porta fixa, só localhost — dá bind nela funciona como trava de "instância
+# única" (só um processo consegue reservar a mesma porta ao mesmo tempo) e
+# dobra de canal de aviso pra outra instância (ver _enviar_comando_instancia_
+# existente): mais simples que mutex nomeado via ctypes e não pede nenhuma
+# biblioteca nova (pywin32, etc). Motivo de existir: com mais de uma janela
+# do programa aberta, o arquivo do executável fica travado e a auto-
+# atualização nunca consegue trocar o arquivo (reproduzido e confirmado —
+# via logs, um Monitor2D_novo.exe baixado ficava órfão em %TEMP%, o script
+# de troca esgotava as 90 tentativas e desistia, sempre, porque uma segunda
+# janela ainda estava aberta e continuava travando o arquivo).
+PORTA_INSTANCIA_UNICA = 51837
+
+
+def _tentar_registrar_instancia_unica():
+    """
+    Socket TCP escutando em localhost, se essa for a primeira instância
+    (bind bem-sucedido). None se a porta já está em uso por outra — ou
+    seja, já tem uma instância do programa rodando.
+    """
+    servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        servidor.bind(("127.0.0.1", PORTA_INSTANCIA_UNICA))
+    except OSError:
+        servidor.close()
+        return None
+    servidor.listen(1)
+    return servidor
+
+
+def _enviar_comando_instancia_existente(comando, timeout=2):
+    """Manda um comando curto ("ATIVAR"/"FECHAR") pra instância já aberta. True se entregou."""
+    try:
+        with socket.create_connection(("127.0.0.1", PORTA_INSTANCIA_UNICA), timeout=timeout) as cliente:
+            cliente.sendall(comando.encode("utf-8"))
+        return True
+    except OSError:
+        return False
+
+
+def _perguntar_instancia_ja_aberta():
+    """
+    Diálogo mostrado ANTES da janela principal existir — outra instância do
+    programa já está rodando, e o usuário decide o que fazer (mesmo padrão
+    de raiz temporária de _pedir_permissao_primeira_execucao). Retorna
+    "prosseguir", "fechar" ou "cancelar".
+    """
+    raiz_temporaria = tk.Tk()
+    raiz_temporaria.withdraw()
+    resultado = {"escolha": "cancelar"}
+
+    janela = tk.Toplevel(raiz_temporaria)
+    janela.title(NOME_SISTEMA)
+    janela.resizable(False, False)
+    janela.grab_set()
+
+    tk.Label(
+        janela, text=f"O {NOME_SISTEMA} já está aberto em outra janela.",
+        font=("Segoe UI", 10, "bold"), padx=24, pady=(22, 4),
+    ).pack()
+    tk.Label(
+        janela,
+        text="Enquanto houver mais de uma instância aberta, a atualização automática\n"
+             "não consegue trocar o arquivo do programa.",
+        font=("Segoe UI", 9), fg="gray", padx=24, justify="center",
+    ).pack(pady=(0, 18))
+
+    def _escolher(valor):
+        resultado["escolha"] = valor
+        janela.destroy()
+
+    linha_botoes = tk.Frame(janela)
+    linha_botoes.pack(pady=(0, 22), padx=24)
+    tk.Button(
+        linha_botoes, text="Ir para a instância aberta", width=24, command=lambda: _escolher("prosseguir"),
+    ).pack(side="left", padx=6)
+    tk.Button(
+        linha_botoes, text="Fechar a instância aberta", width=24, command=lambda: _escolher("fechar"),
+    ).pack(side="left", padx=6)
+
+    janela.protocol("WM_DELETE_WINDOW", lambda: _escolher("cancelar"))
+    janela.update_idletasks()
+    x = (janela.winfo_screenwidth() - janela.winfo_reqwidth()) // 2
+    y = (janela.winfo_screenheight() - janela.winfo_reqheight()) // 2
+    janela.geometry(f"+{x}+{y}")
+
+    raiz_temporaria.wait_window(janela)
+    raiz_temporaria.destroy()
+    return resultado["escolha"]
+
+
 if __name__ == "__main__":
+    import time
     import splash
 
     _pedir_permissao_primeira_execucao()
+
+    servidor_instancia = _tentar_registrar_instancia_unica()
+    if servidor_instancia is None:
+        escolha = _perguntar_instancia_ja_aberta()
+        if escolha == "prosseguir":
+            _enviar_comando_instancia_existente("ATIVAR")
+            sys.exit(0)
+        elif escolha == "fechar":
+            _enviar_comando_instancia_existente("FECHAR")
+            # A instância antiga leva um instante pra soltar a porta depois
+            # de receber o comando — sem essa espera/novas tentativas, essa
+            # instância nova desistiria cedo demais e cairia no erro abaixo
+            # por pura diferença de tempo, não por falha real.
+            for _ in range(20):
+                time.sleep(0.3)
+                servidor_instancia = _tentar_registrar_instancia_unica()
+                if servidor_instancia is not None:
+                    break
+            if servidor_instancia is None:
+                raiz_erro = tk.Tk()
+                raiz_erro.withdraw()
+                messagebox.showerror(
+                    NOME_SISTEMA,
+                    "Não foi possível fechar a instância aberta automaticamente.\n"
+                    "Feche-a manualmente pela barra de tarefas e abra o programa de novo.",
+                )
+                raiz_erro.destroy()
+                sys.exit(1)
+        else:
+            sys.exit(0)
+
     splash.exibir_splash_e_iniciar(
         etapas_preparacao=construir_etapas_preparacao(),
-        funcao_construir_janela_principal=AplicacaoAnaliseFunil,
+        funcao_construir_janela_principal=lambda: AplicacaoAnaliseFunil(servidor_instancia_unica=servidor_instancia),
     )

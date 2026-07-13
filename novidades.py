@@ -102,4 +102,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.15": [
         "Alto Giro: receita, status, variação e clientes destaque/em queda agora consideram só clientes do Grupo 1 (a carteira principal) — um produto sem compra de nenhum cliente Grupo 1 nos 2 últimos meses deixa de aparecer no relatório.",
     ],
+    "1.6.16": [
+        "Corrige o filtro de Grupo 1 do Alto Giro (v1.6.15): a classificação estava sendo calculada sem o mês mais recente, podendo incluir por engano um cliente que é Grupo 2 na visão completa (a mesma que aparece em Configurações). Agora usa sempre a receita total do cliente, igual à prévia de Configurações.",
+    ],
 }

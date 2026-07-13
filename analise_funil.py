@@ -1728,8 +1728,16 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             # Compra/Sem Venda/prévia de Configurações) — um produto de alto giro
             # sustentado por clientes menores não deve aparecer "em alta" por
             # causa deles; o que importa aqui é a carteira principal.
+            #
+            # A classificação usa SEMPRE o "df" completo (todo o histórico, sem
+            # excluir o período mais recente) — não o "df_periodo" já filtrado
+            # logo abaixo — porque quem é Grupo 1 é uma pergunta sobre a receita
+            # TOTAL do cliente, igual à prévia de Configurações; calcular sobre
+            # uma fatia menor (sem o último mês) muda o ranking e pode incluir/
+            # excluir cliente perto do corte por pouco, divergindo do que o
+            # usuário vê e valida na tela de Configurações.
             classificacao_grupo1 = classificar_clientes_agregado(
-                df_periodo, cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
+                df, cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
             )
             clientes_grupo1 = set(classificacao_grupo1.loc[classificacao_grupo1["Faixa"] == "Grupo 1", "Cliente"])
             df_alto_giro = df_periodo[df_periodo["Cliente"].isin(clientes_grupo1)]

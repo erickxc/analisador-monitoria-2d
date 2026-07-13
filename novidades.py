@@ -56,4 +56,23 @@ NOVIDADES_POR_VERSAO = {
         "Migração de Grupo: nova coluna 'Margem' (Qtd_Subiu - Qtd_Desceu) no resumo por transição de período.",
         "Migração de Grupo: nova coluna 'Grupo' no placar por cliente, mostrando a faixa ABC mais recente de cada um.",
     ],
+    "1.6.5": [
+        "Corrige um erro ao abrir o programa em algumas máquinas ('no default root window').",
+        "Adiciona filtro de Lojas incluídas na análise.",
+    ],
+    "1.6.6": [
+        "Nova aba 'Visualizar Relatório': pré-visualiza qualquer relatório sem precisar exportar, com filtro por categoria (Gerais/Gerenciais).",
+        "PDF/Word: corrige títulos truncados e cabeçalhos crus; largura de coluna calculada pelo conteúdo real; índice agora traz o número da página.",
+        "Parâmetros de Alertas de Queda/Erosão movidos para dentro do catálogo, junto do relatório correspondente; corrige coluna de Parâmetros sem rolagem cortando conteúdo no rodapé.",
+        "Gráfico Top Fabricantes: novas colunas com Mês Atual e Mês Anterior.",
+    ],
+    "1.6.7": [
+        "Corrige a causa raiz de atualizações que baixavam mas nunca terminavam de instalar: agora não é mais possível abrir duas janelas do programa ao mesmo tempo (a segunda janela travava o arquivo, impedindo a troca pela versão nova).",
+        "Corrige uma falha ao tentar abrir uma segunda instância do programa.",
+    ],
+    "1.6.8": [
+        "Gráfico 'Receita por Fabricante ou Produto': novo controle de ordem (crescente/decrescente) e opção de mostrar só os N maiores ou menores.",
+        "Gráficos 'Top Clientes'/'Top Fabricantes': ordem crescente agora mostra os piores, não só os melhores.",
+        "Corrige colunas de Mês Atual/Anterior faltando ao exportar 'Top Clientes' e o estilo Histograma para Excel.",
+    ],
 }

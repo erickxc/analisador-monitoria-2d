@@ -99,4 +99,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.14": [
         "Alto Giro: novas colunas '% Variação do Cliente Destaque' e '% Variação do Cliente em Queda' — a variação de compra DAQUELE cliente específico nesse produto (mês atual vs. anterior), separado da variação % do produto como um todo.",
     ],
+    "1.6.15": [
+        "Alto Giro: receita, status, variação e clientes destaque/em queda agora consideram só clientes do Grupo 1 (a carteira principal) — um produto sem compra de nenhum cliente Grupo 1 nos 2 últimos meses deixa de aparecer no relatório.",
+    ],
 }

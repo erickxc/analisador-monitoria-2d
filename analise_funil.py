@@ -1722,8 +1722,18 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             )
 
         if precisa("alto_giro"):
-            logar(f"[{granularidade}] Calculando status de alto giro...")
-            analises["alto_giro"] = status_alto_giro(df_periodo, desconsiderar_balcao=desconsiderar_balcao).rename(columns={
+            logar(f"[{granularidade}] Calculando status de alto giro (somente clientes Grupo 1)...")
+            # Alto Giro reflete só o comportamento dos clientes mais importantes
+            # (Grupo 1 da classificação agregada, mesmo corte usado em Poder de
+            # Compra/Sem Venda/prévia de Configurações) — um produto de alto giro
+            # sustentado por clientes menores não deve aparecer "em alta" por
+            # causa deles; o que importa aqui é a carteira principal.
+            classificacao_grupo1 = classificar_clientes_agregado(
+                df_periodo, cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
+            )
+            clientes_grupo1 = set(classificacao_grupo1.loc[classificacao_grupo1["Faixa"] == "Grupo 1", "Cliente"])
+            df_alto_giro = df_periodo[df_periodo["Cliente"].isin(clientes_grupo1)]
+            analises["alto_giro"] = status_alto_giro(df_alto_giro, desconsiderar_balcao=desconsiderar_balcao).rename(columns={
                 "Receita_Atual": "Receita Atual",
                 "Variacao_Percentual": "% de Variação",
                 "Cliente_Destaque": "Cliente Destaque",

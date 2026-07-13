@@ -75,4 +75,8 @@ NOVIDADES_POR_VERSAO = {
         "Gráficos 'Top Clientes'/'Top Fabricantes': ordem crescente agora mostra os piores, não só os melhores.",
         "Corrige colunas de Mês Atual/Anterior faltando ao exportar 'Top Clientes' e o estilo Histograma para Excel.",
     ],
+    "1.6.9": [
+        "Corrige a descrição de Erosão de Clientes e Alertas de Queda exportada no Excel/PDF/Word: sempre mostrava os valores padrão (ex.: 'caiu 50%+'), mesmo quando você configurava outro valor — agora reflete o que foi realmente usado na geração.",
+        "Esclarece o rótulo 'Períodos mínimos seguidos em queda' (antes só dizia 'Períodos seguidos em queda', dando a entender um valor exato em vez de um piso mínimo).",
+    ],
 }

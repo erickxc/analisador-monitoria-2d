@@ -1762,8 +1762,68 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self.label_contagem_catalogo = ttk.Label(barra_selecao, foreground="#1565c0")
         self.label_contagem_catalogo.pack(side="right")
 
-        lista_frame = ttk.Frame(master)
-        lista_frame.pack(fill="both", expand=True, padx=10, pady=8)
+        # "Exportação" (com o botão "Gerar Relatório Padrão") é empacotado
+        # ANTES do catálogo de relatórios e com side="bottom", de propósito
+        # — mesmo motivo já documentado em _montar_interface pro painel de
+        # execução: o catálogo (fill="both", expand=True, pode crescer
+        # bastante com muitos relatórios/parâmetros condicionais marcados)
+        # é o único widget aqui com expand=True. Se ele fosse empacotado
+        # primeiro, tomaria a cavidade toda em janelas sem altura suficiente,
+        # e a área de exportação — com o botão de gerar — ficaria sem espaço
+        # nenhum e sumiria da tela (reproduzido: catálogo grande + janela sem
+        # altura de sobra = botão inacessível, sem nem scrollbar pra chegar
+        # nele). Empacotando a área de exportação primeiro, com side="bottom",
+        # ela sempre reserva seu espaço primeiro; é o catálogo que cede
+        # espaço (fica mais apertado) quando a janela é pequena.
+        area_exportacao = ttk.LabelFrame(master, text="Exportação")
+        area_exportacao.pack(fill="x", side="bottom", padx=10, pady=(0, 10))
+
+        barra_formato = ttk.Frame(area_exportacao)
+        barra_formato.pack(pady=(10, 0))
+        ttk.Label(barra_formato, text="Formato de exportação:").pack(side="left", padx=(0, 8))
+        self.var_formato_exportacao = tk.StringVar(master=self, value="Excel")
+        for formato in ("Excel", "PDF", "Word"):
+            ttk.Radiobutton(
+                barra_formato, text=formato, value=formato, variable=self.var_formato_exportacao,
+                # command explícito além da variável ligada — o clique no radio nem sempre
+                # escreve na variável de forma confiável (mesmo problema visto nas checkboxes
+                # do catálogo), então forçamos aqui como garantia.
+                command=lambda f=formato: self.var_formato_exportacao.set(f),
+            ).pack(side="left", padx=4)
+        ttk.Label(
+            area_exportacao, text="PDF/Word mostram no máximo 50 linhas por tabela (formato de leitura, não de dados).\n"
+                                  "Para a base completa (ex.: todos os clientes da segmentação ABC), use Excel.",
+            justify="center", foreground="gray", font=("Segoe UI", 8),
+        ).pack(pady=(4, 0))
+
+        self.botao_gerar = ttk.Button(area_exportacao, text="Gerar Relatório Padrão", command=self._gerar_relatorio_padrao)
+        self.botao_gerar.pack(pady=14)
+
+        # Canvas + Scrollbar clássico do Tkinter (mesmo padrão já usado na
+        # coluna de parâmetros de Configurações) — com a área de exportação
+        # agora reservando seu espaço primeiro (ver comentário acima), o
+        # catálogo pode ficar mais apertado que sua altura natural em janelas
+        # sem espaço de sobra; sem isso, os relatórios de baixo (Boletins)
+        # ficavam simplesmente cortados, inacessíveis, sem como rolar até eles.
+        container_lista = ttk.Frame(master)
+        container_lista.pack(fill="both", expand=True, padx=10, pady=8)
+        canvas_lista = tk.Canvas(container_lista, borderwidth=0, highlightthickness=0)
+        barra_rolagem_lista = ttk.Scrollbar(container_lista, orient="vertical", command=canvas_lista.yview)
+        canvas_lista.configure(yscrollcommand=barra_rolagem_lista.set)
+        canvas_lista.pack(side="left", fill="both", expand=True)
+        barra_rolagem_lista.pack(side="right", fill="y")
+
+        def _ao_rolar_mouse_catalogo(evento):
+            canvas_lista.yview_scroll(int(-1 * (evento.delta / 120)), "units")
+
+        canvas_lista.bind("<Enter>", lambda _e: canvas_lista.bind_all("<MouseWheel>", _ao_rolar_mouse_catalogo))
+        canvas_lista.bind("<Leave>", lambda _e: canvas_lista.unbind_all("<MouseWheel>"))
+
+        lista_frame = ttk.Frame(canvas_lista)
+        janela_lista_frame = canvas_lista.create_window((0, 0), window=lista_frame, anchor="nw")
+        lista_frame.bind("<Configure>", lambda _e: canvas_lista.configure(scrollregion=canvas_lista.bbox("all")))
+        canvas_lista.bind("<Configure>", lambda evento: canvas_lista.itemconfig(janela_lista_frame, width=evento.width))
+
         lista_frame.columnconfigure(0, weight=1, uniform="categoria")
         lista_frame.columnconfigure(1, weight=1, uniform="categoria")
 
@@ -1790,30 +1850,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                     linha = self._montar_campos_condicionais_catalogo(grupo, linha, grupo_parametros)
         self._atualizar_contagem_catalogo()
         self._atualizar_estado_campos_condicionais_catalogo()
-
-        area_exportacao = ttk.LabelFrame(master, text="Exportação")
-        area_exportacao.pack(fill="x", padx=10, pady=(0, 10))
-
-        barra_formato = ttk.Frame(area_exportacao)
-        barra_formato.pack(pady=(10, 0))
-        ttk.Label(barra_formato, text="Formato de exportação:").pack(side="left", padx=(0, 8))
-        self.var_formato_exportacao = tk.StringVar(master=self, value="Excel")
-        for formato in ("Excel", "PDF", "Word"):
-            ttk.Radiobutton(
-                barra_formato, text=formato, value=formato, variable=self.var_formato_exportacao,
-                # command explícito além da variável ligada — o clique no radio nem sempre
-                # escreve na variável de forma confiável (mesmo problema visto nas checkboxes
-                # do catálogo), então forçamos aqui como garantia.
-                command=lambda f=formato: self.var_formato_exportacao.set(f),
-            ).pack(side="left", padx=4)
-        ttk.Label(
-            area_exportacao, text="PDF/Word mostram no máximo 50 linhas por tabela (formato de leitura, não de dados).\n"
-                                  "Para a base completa (ex.: todos os clientes da segmentação ABC), use Excel.",
-            justify="center", foreground="gray", font=("Segoe UI", 8),
-        ).pack(pady=(4, 0))
-
-        self.botao_gerar = ttk.Button(area_exportacao, text="Gerar Relatório Padrão", command=self._gerar_relatorio_padrao)
-        self.botao_gerar.pack(pady=14)
 
     # ------------------------------------------------------------------
     # Visualizar Relatório: navega os DataFrames da última geração sem

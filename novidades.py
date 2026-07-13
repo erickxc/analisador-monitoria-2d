@@ -90,4 +90,10 @@ NOVIDADES_POR_VERSAO = {
     "1.6.11": [
         "Corrige o tamanho da janela principal (e da tela de 'Novidades') em telas com escala do Windows diferente de 100%: a correção da v1.6.10 evitava o texto/botões borrados, mas o tamanho da janela ficou pequeno demais pro conteúdo, cortando o rodapé — inclusive o botão 'Gerar Relatório Padrão', que sumia de vista.",
     ],
+    "1.6.12": [
+        "Corrige de vez o botão 'Gerar Relatório Padrão' sumindo de vista: a causa real não era só o tamanho da janela (v1.6.11), e sim a ordem de montagem da tela — a lista de relatórios (que cresce bastante com vários relatórios/parâmetros marcados) tomava todo o espaço disponível antes do botão, deixando-o sem lugar quando a janela não tinha altura de sobra. Agora o botão sempre reserva seu espaço primeiro, e é a lista de relatórios que se ajusta ao espaço restante.",
+    ],
+    "1.6.13": [
+        "Adiciona barra de rolagem à lista de relatórios da tela 'Relatório Padrão': a correção da v1.6.12 garantiu que o botão 'Gerar Relatório Padrão' nunca mais fique sem espaço, mas em janelas pequenas a lista em si podia ficar cortada, sem como ver os relatórios de baixo. Agora dá para rolar até todos eles.",
+    ],
 }

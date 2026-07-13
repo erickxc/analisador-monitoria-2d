@@ -315,13 +315,24 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
     def _definir_geometria_janela(self):
         """
-        Tamanho ideal 1360x880, mas nunca maior que a tela disponível —
-        numa tela menor (notebook, resolução baixa, escala de DPI alta), o
-        tamanho fixo anterior cortava a parte de baixo da janela pra fora
+        Tamanho ideal 1360x880 (em pixels a 100% de escala), mas nunca maior
+        que a tela disponível — numa tela menor (notebook, resolução baixa),
+        o tamanho fixo anterior cortava a parte de baixo da janela pra fora
         da área visível, atrás da barra de tarefas do Windows.
+
+        Escalado pelo fator de DPI real (self.winfo_fpixels('1i') / 96) porque,
+        desde que o processo passou a se declarar DPI-aware pro Windows (ver
+        _declarar_dpi_aware), o Tk usa a resolução física de verdade pra
+        winfo_screenwidth/height e pra desenhar fontes/paddings — sem esse
+        ajuste, numa tela a 125%/150% a janela pedia o mesmo tanto de pixels
+        físicos de sempre, só que agora sem o Windows esticando o resultado
+        pra compensar, então o conteúdo (que cresce corretamente com a fonte)
+        deixava de caber e cortava o rodapé da tela (ex.: botão "Gerar
+        Relatório Padrão" sumindo de vista).
         """
-        largura_ideal, altura_ideal = 1360, 880
-        margem_taskbar = 60
+        escala = self.winfo_fpixels("1i") / 96.0
+        largura_ideal, altura_ideal = round(1360 * escala), round(880 * escala)
+        margem_taskbar = round(60 * escala)
         largura = min(largura_ideal, self.winfo_screenwidth() - 20)
         altura = min(altura_ideal, self.winfo_screenheight() - margem_taskbar)
         x = max((self.winfo_screenwidth() - largura) // 2, 0)
@@ -440,9 +451,10 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         if not itens:
             return
 
+        escala = self.winfo_fpixels("1i") / 96.0
         janela = tk.Toplevel(self)
         janela.title(f"Novidades da versão {VERSAO_ATUAL}")
-        janela.geometry("440x360")
+        janela.geometry(f"{round(440 * escala)}x{round(360 * escala)}")
         janela.resizable(False, False)
         janela.transient(self)
         janela.grab_set()

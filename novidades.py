@@ -87,4 +87,7 @@ NOVIDADES_POR_VERSAO = {
         "Poder de Compra: novo campo para limitar o máximo de clientes exibidos, mantendo sempre os de maior Poder de Compra primeiro.",
         "Corrige o botão 'Gerar Relatório Padrão' (e outros elementos da tela) aparecendo fragmentado/borrado em telas com escala do Windows diferente de 100% — o programa agora avisa o Windows que lida com a escala sozinho, em vez de deixar o próprio Windows esticar a janela já desenhada.",
     ],
+    "1.6.11": [
+        "Corrige o tamanho da janela principal (e da tela de 'Novidades') em telas com escala do Windows diferente de 100%: a correção da v1.6.10 evitava o texto/botões borrados, mas o tamanho da janela ficou pequeno demais pro conteúdo, cortando o rodapé — inclusive o botão 'Gerar Relatório Padrão', que sumia de vista.",
+    ],
 }

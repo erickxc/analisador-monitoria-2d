@@ -885,8 +885,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         arvore.heading("check", text="Considerar?")
         arvore.heading("produto", text="Produto", command=lambda: self._ordenar_produtos("rotulo"))
         arvore.heading("grupo", text="Grupo")
-        arvore.heading("freq_simples", text="Freq. Simples", command=lambda: self._ordenar_produtos("freq_simples"))
-        arvore.heading("freq_acumulado", text="Freq. Acumulado", command=lambda: self._ordenar_produtos("freq_acumulado"))
+        arvore.heading("freq_simples", text="% Receita", command=lambda: self._ordenar_produtos("freq_simples"))
+        arvore.heading("freq_acumulado", text="% Receita Acumulada", command=lambda: self._ordenar_produtos("freq_acumulado"))
         arvore.column("check", width=80, anchor="center")
         arvore.column("produto", width=230, anchor="w")
         arvore.column("grupo", width=70, anchor="center")
@@ -1077,7 +1077,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             for produto in produtos
         )
 
-        self._ordem_produtos = ("freq_simples", True)  # padrão: mais frequentes primeiro
+        self._ordem_produtos = ("freq_simples", True)  # padrão: maior % de receita primeiro
         self._recalcular_classificacoes()
 
     def _buscar_produtos(self, texto):
@@ -1142,6 +1142,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             ttk.Checkbutton(self.container_lojas, text=loja, variable=var).pack(anchor="w")
             self.vars_lojas[loja] = var
 
+    def _filtrar_por_lojas(self, df):
+        """
+        Filtra pelas lojas marcadas em "Lojas incluídas na análise" — extraído
+        de _dataframe_para_analise pra ser reaproveitado também na prévia de
+        classificação (_recalcular_classificacoes). Sem isso, a % de receita
+        mostrada em "Produtos considerados"/"Clientes" na tela de Configurações
+        vinha da base INTEIRA (todas as lojas), divergindo do que o relatório
+        de verdade calcula quando alguma loja está desmarcada.
+        """
+        if not self.vars_lojas:
+            return df
+        lojas_selecionadas = self._lojas_selecionadas()
+        if len(lojas_selecionadas) < len(self.vars_lojas):
+            return df[df["Loja"].isin(lojas_selecionadas)]
+        return df
+
     def _dataframe_para_analise(self):
         """
         DataFrame efetivo para qualquer consumidor (relatório padrão,
@@ -1156,11 +1172,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         if self.df is None:
             return None
 
-        df_filtrado = self.df
-        if self.vars_lojas:
-            lojas_selecionadas = self._lojas_selecionadas()
-            if len(lojas_selecionadas) < len(self.vars_lojas):
-                df_filtrado = df_filtrado[df_filtrado["Loja"].isin(lojas_selecionadas)]
+        df_filtrado = self._filtrar_por_lojas(self.df)
 
         if self.check_somente_alto_giro.instate(["selected"]):
             produtos_excluidos = self._produtos_excluidos()
@@ -1409,8 +1421,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _recalcular_classificacoes(self):
         """
         Recalcula, com os parâmetros ATUAIS da tela, a que grupo cada cliente
-        e cada produto pertence (mais a frequência de compra dos produtos), e
-        atualiza as colunas "Grupo"/"Frequência" nas duas listas — é a mesma
+        e cada produto pertence (mais o % de receita de cada produto — a
+        coluna se chama "% Receita" na tela, não frequência de compra), e
+        atualiza as colunas "Grupo"/"% Receita" nas duas listas — é a mesma
         classificação que rege os relatórios de segmentação, mas em versão
         rápida (agregada, não por período) só para a prévia na tela.
         """
@@ -1430,8 +1443,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
 
         clientes_excluidos = set(self._clientes_excluidos())
+        # Mesma base usada pelo relatório de verdade (menos o corte de
+        # produtos, que é justamente o que esta prévia está calculando) —
+        # sem isso, a % de receita aqui vinha de TODAS as lojas, mesmo com
+        # alguma desmarcada em "Lojas incluídas na análise", divergindo do
+        # relatório gerado de fato.
+        base_classificacao = self._filtrar_por_lojas(self.df)
 
-        classificacao_clientes = af.classificar_clientes_agregado(self.df, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
+        classificacao_clientes = af.classificar_clientes_agregado(base_classificacao, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
         mapa_grupo_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Faixa"]))
         mapa_percentual_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Percentual_Individual"]))
         for item in self.dados_clientes:
@@ -1442,7 +1461,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 item["grupo"] = mapa_grupo_cliente.get(item["cliente"], "-")
                 item["percentual"] = mapa_percentual_cliente.get(item["cliente"], 0.0)
 
-        classificacao_produtos = af.classificar_produtos_agregado(self.df, corte_produtos)
+        classificacao_produtos = af.classificar_produtos_agregado(base_classificacao, corte_produtos, clientes_excluidos=clientes_excluidos)
         mapa_grupo_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Faixa"]))
         mapa_freq_simples_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Freq_Simples"]))
         mapa_freq_acumulado_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Freq_Acumulado"]))

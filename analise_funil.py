@@ -1203,17 +1203,25 @@ def classificar_clientes_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.
     return resultado
 
 
-def classificar_produtos_agregado(df, corte_percentual=80.0):
+def classificar_produtos_agregado(df, corte_percentual=80.0, clientes_excluidos=None):
     """
     Classificação RÁPIDA (não por período) de cada produto em "Grupo 1"
     (top corte_percentual% da receita) ou "Demais", com a participação na
-    receita: Freq_Simples é o % individual daquele produto na receita total,
+    receita: apesar do nome das colunas (Freq_Simples/Freq_Acumulado,
+    mantidos por compatibilidade — a tela já mostra "% Receita"/"% Receita
+    Acumulada", os rótulos certos), NÃO é frequência de compra nenhuma —
+    Freq_Simples é o % individual daquele produto na receita total,
     Freq_Acumulado é o % acumulado (curva de Pareto/ABC — mesmo valor que
     decide a Faixa). Pensada para a prévia na interface — ver
     classificar_produtos_por_receita para a versão por período usada no
     relatório final.
+
+    clientes_excluidos: mesma lista de "Clientes a excluir das métricas" da
+    tela — sem isso, a % de receita de cada produto incluía a compra de
+    clientes que o usuário já tirou da análise em todo o resto do sistema.
     """
-    receita_produto = df.groupby("descricao")["Receita"].sum().sort_values(ascending=False)
+    base = df[~df["Cliente"].isin(set(clientes_excluidos))] if clientes_excluidos else df
+    receita_produto = base.groupby("descricao")["Receita"].sum().sort_values(ascending=False)
     resultado = receita_produto.reset_index()
     resultado.columns = ["descricao", "Receita"]
     total = resultado["Receita"].sum()

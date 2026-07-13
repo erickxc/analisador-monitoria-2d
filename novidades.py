@@ -85,5 +85,6 @@ NOVIDADES_POR_VERSAO = {
         "Corrige a prévia de 'Produtos considerados'/'Clientes' na tela de Configurações: estava calculando a % de receita a partir da base inteira, ignorando lojas desmarcadas e clientes excluídos.",
         "Corrige o rótulo das colunas 'Freq. Simples'/'Freq. Acumulado' na lista de produtos — nunca foram frequência de compra, sempre foram % de receita. Renomeadas para '% Receita'/'% Receita Acumulada'.",
         "Poder de Compra: novo campo para limitar o máximo de clientes exibidos, mantendo sempre os de maior Poder de Compra primeiro.",
+        "Corrige o botão 'Gerar Relatório Padrão' (e outros elementos da tela) aparecendo fragmentado/borrado em telas com escala do Windows diferente de 100% — o programa agora avisa o Windows que lida com a escala sozinho, em vez de deixar o próprio Windows esticar a janela já desenhada.",
     ],
 }

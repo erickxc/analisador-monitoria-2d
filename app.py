@@ -2720,9 +2720,31 @@ def _perguntar_instancia_ja_aberta():
     return resultado["escolha"]
 
 
+def _declarar_dpi_aware():
+    """
+    Sem isso, o Windows não sabe que o programa lida com a escala de tela
+    (DPI) sozinho e "finge" que a janela está em 100%, esticando o bitmap
+    já renderizado (com ClearType) para a escala real (125%/150%/etc) —
+    é isso que produz texto/botões com aparência fragmentada e franjas de
+    cor. Precisa ser chamado ANTES de qualquer janela Tk ser criada.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor V2
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
     import time
     import splash
+
+    _declarar_dpi_aware()
 
     _pedir_permissao_primeira_execucao()
 

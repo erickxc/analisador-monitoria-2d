@@ -348,10 +348,15 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
         antes da primeira queda até o último período), não aos extremos de
         todo o histórico do produto — o período atual em si não aparece
         como coluna porque é sempre o mesmo valor em todas as linhas (o
-        último período disponível). Ordenado por "Queda em R$" (Receita
-        Precedente à Queda − Receita Atual) descendente — prioriza impacto
-        financeiro, não duração da sequência: um produto com R$50.000 de
-        queda em 2 períodos é mais crítico que um com R$200 de queda em 5.
+        último período disponível). "Queda em R$" é a soma acumulada da
+        perda em CADA período da sequência frente ao período-base (não só
+        a diferença entre o primeiro e o último) — uma queda que persiste
+        por vários períodos pesa mais do que uma queda pontual do mesmo
+        tamanho no último período. Ordenado por "Queda em R$" descendente:
+        ainda prioriza impacto financeiro acumulado, não só duração —um
+        produto de alto volume caindo poucos períodos pode acumular mais
+        perda que um de baixo volume caindo há muito mais tempo, e isso é
+        esperado (o valor em R$ importa mais que a contagem de períodos).
         "% Média de Queda" é a média das variações percentuais dentro dessa
         janela (magnitude positiva).
     """
@@ -400,6 +405,13 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
             media_queda_pct = -grupo["Variacao_Percentual"].tail(quedas_seguidas).mean()
             receita_anterior = janela["Receita"].iloc[0]
             receita_atual = grupo["Receita"].iloc[-1]
+            # Soma acumulada da perda mês a mês (baseline fixo = receita
+            # ANTES da primeira queda da sequência, comparado contra CADA um
+            # dos "quedas_seguidas" meses seguintes) — não só a diferença
+            # entre o primeiro e o último mês. Uma queda longa e constante
+            # deveria pesar mais que uma queda curta e única do mesmo
+            # tamanho pontual; início-vs-fim ignorava isso por completo.
+            queda_acumulada = (receita_anterior - janela["Receita"].iloc[1:]).sum()
             alertas.append({
                 "descricao": produto,
                 "Períodos Consecutivos em Queda": quedas_seguidas,
@@ -408,7 +420,7 @@ def tendencia_produtos(df, granularidade="Mensal", periodos_queda_consecutiva=2,
                 "Qtd Precedente à Queda": janela["QTD"].iloc[0],
                 "Receita Atual": receita_atual,
                 "Qtd Atual": grupo["QTD"].iloc[-1],
-                "Queda em R$": receita_anterior - receita_atual,
+                "Queda em R$": queda_acumulada,
                 "% Média de Queda": media_queda_pct,
             })
 
@@ -704,6 +716,59 @@ def erosao_clientes_geral(df, reducao_minima_percentual=50.0, queda_minima_reais
     erosao.sort_values("Reducao_Receita", ascending=False, inplace=True)
     erosao.reset_index(drop=True, inplace=True)
     return erosao
+
+
+def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False):
+    """
+    Relatório executivo, sem granularidade (sempre por Periodo_Mensal):
+    clientes que já compraram alguma vez, mas praticamente pararam — a
+    receita do mês mais recente caiu reducao_minima_percentual% ou mais
+    frente ao pico histórico (padrão 90%, ou seja, sobrou no máximo 10% do
+    que o cliente já demonstrou comprar no auge). Reaproveita o mesmo
+    motor de erosao_clientes_geral (_erosao_generico), mas DE PROPÓSITO
+    sem piso de R$ — diferente de Erosão de Clientes (piso padrão de
+    R$3000), aqui o objetivo é justamente pegar clientes de baixo volume
+    que a Erosão descarta pelo piso financeiro, mas que mesmo assim
+    pararam de comprar de verdade (ex.: um cliente Grupo 3 que comprou
+    bem por 2 meses e nunca mais voltou).
+
+    Ao contrário dos relatórios de erosão (que só mostram pico x atual),
+    a tabela aqui é "larga": uma coluna de receita por MÊS disponível na
+    base inteira, pra ver a trajetória completa (comprava, parou) de cada
+    cliente de uma vez, em vez de só os dois extremos.
+
+    Retorna: Cliente, Grupo (faixa ABC pela receita total — ver
+    classificar_clientes_agregado — não pelo poder de compra), Receita no
+    Pico, e uma coluna por mês disponível na base (rótulo legível, ex.
+    "ago/25") — ordenado por Receita no Pico descendente (maior potencial
+    perdido primeiro).
+    """
+    colunas_vazias = ["Cliente", "Grupo", "Receita no Pico"]
+    clientes_erosao = _erosao_generico(df, ["Cliente"], reducao_minima_percentual, queda_minima_reais=0.0)
+    if clientes_erosao.empty:
+        return pd.DataFrame(columns=colunas_vazias)
+
+    clientes_alvo = set(clientes_erosao["Cliente"])
+    periodos_ordenados = _ordenar_periodos(df["Periodo_Mensal"].unique(), "Mensal")
+
+    receita_mensal = (
+        df[df["Cliente"].isin(clientes_alvo)]
+        .groupby(["Cliente", "Periodo_Mensal"], as_index=False)["Receita"].sum()
+    )
+    pivot = receita_mensal.pivot(index="Cliente", columns="Periodo_Mensal", values="Receita")
+    pivot = pivot.reindex(columns=periodos_ordenados).fillna(0.0)
+    pivot.columns = [_formatar_rotulo_periodo(p, "Mensal") for p in pivot.columns]
+
+    classificacao = classificar_clientes_agregado(df, cortes=cortes, desconsiderar_balcao=desconsiderar_balcao)
+    mapa_grupo = dict(zip(classificacao["Cliente"], classificacao["Faixa"]))
+    mapa_pico = clientes_erosao.set_index("Cliente")["Receita_Periodo_Anterior"]
+
+    resultado = pivot.reset_index()
+    resultado.insert(1, "Grupo", resultado["Cliente"].map(mapa_grupo).fillna("-"))
+    resultado.insert(2, "Receita no Pico", resultado["Cliente"].map(mapa_pico))
+    resultado.sort_values("Receita no Pico", ascending=False, inplace=True)
+    resultado.reset_index(drop=True, inplace=True)
+    return resultado
 
 
 def clientes_queda_quantidade(df, granularidade="Mensal", top_n=10):
@@ -1485,7 +1550,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                               periodos_queda_consecutiva=2, callback_log=None, chaves_solicitadas=None,
                               desconsiderar_balcao=False, excluir_periodo_atual=True,
                               top_n_produtos=None, reducao_minima_erosao=50.0, queda_minima_alerta=0.0,
-                              queda_minima_erosao_reais=0.0):
+                              queda_minima_erosao_reais=0.0, reducao_minima_sem_venda=90.0):
     """
     Roda as análises solicitadas para cada granularidade escolhida.
 
@@ -1519,7 +1584,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
 
     todas_as_chaves = {
         "top_produtos", "poder_compra_clientes",
-        "evolucao_produtos", "alertas_queda", "erosao_clientes", "erosao_geral", "alto_giro", "abc", "abc_produtos",
+        "evolucao_produtos", "alertas_queda", "erosao_clientes", "erosao_geral", "sem_venda", "alto_giro", "abc", "abc_produtos",
         "migracao_abc", "migracao_resumo", "migracao_score_clientes",
         "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
         "correlacao_produto_cliente", "impacto_financeiro_churn",
@@ -1612,6 +1677,15 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 "Reducao_Percentual": "% de Queda",
                 "Parou_De_Comprar": "Parou de Comprar",
             }).drop(columns=["Periodo"])
+
+        if precisa("sem_venda"):
+            logar(f"[{granularidade}] Calculando clientes sem venda (praticamente pararam de comprar)...")
+            analises["sem_venda"] = sem_venda(
+                df_periodo,
+                reducao_minima_percentual=reducao_minima_sem_venda,
+                cortes=cortes_clientes,
+                desconsiderar_balcao=desconsiderar_balcao,
+            )
 
         if precisa("alto_giro"):
             logar(f"[{granularidade}] Calculando status de alto giro...")

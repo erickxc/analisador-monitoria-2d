@@ -157,6 +157,7 @@ CATALOGO_RELATORIOS = [
         ("alertas_queda", "Alertas de Queda Consecutiva"),
         ("erosao_geral", "Erosão de Clientes (Geral)"),
         ("erosao_clientes", "Erosão de Clientes por Produto"),
+        ("sem_venda", "Sem Venda"),
         ("poder_compra_clientes", "Poder de Compra por Cliente (3 maiores meses)"),
         ("produtos_em_alta", "Boletim: Produtos em Alta"),
         ("produtos_em_queda", "Boletim: Produtos em Queda"),
@@ -195,6 +196,14 @@ GRUPOS_PARAMETROS_RELATORIO = [
             ("entrada_queda_minima_erosao", "Queda mínima em R$ p/ erosão:", "3000", 8),
         ],
         "legenda": "Vale para \"Erosão de Clientes (Geral)\" e \"Por Produto\".",
+    },
+    {
+        "gatilhos": ("sem_venda",),
+        "apos": "sem_venda",
+        "campos": [
+            ("entrada_reducao_minima_sem_venda", "Redução mínima p/ Sem Venda (%):", "90", 6),
+        ],
+        "legenda": "Sem piso de R$ de propósito — pega também clientes de baixo volume.",
     },
 ]
 
@@ -2004,6 +2013,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             reducao_minima_erosao = float(self.entrada_reducao_minima_erosao.get().replace(",", "."))
             queda_minima_alerta = float(self.entrada_queda_minima_alerta.get().replace(",", "."))
             queda_minima_erosao = float(self.entrada_queda_minima_erosao.get().replace(",", "."))
+            reducao_minima_sem_venda = float(self.entrada_reducao_minima_sem_venda.get().replace(",", "."))
         except ValueError:
             messagebox.showerror("Parâmetros inválidos", "Verifique os campos numéricos em Configurações.")
             return
@@ -2027,6 +2037,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         if queda_minima_erosao < 0:
             messagebox.showerror("Parâmetros inválidos", "Queda mínima em R$ para erosão deve ser zero ou positiva.")
             return
+        if not (0 <= reducao_minima_sem_venda <= 100):
+            messagebox.showerror("Parâmetros inválidos", "Redução mínima para Sem Venda deve estar entre 0 e 100.")
+            return
 
         df_filtrado = self._dataframe_para_analise()
         if df_filtrado.empty:
@@ -2047,6 +2060,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             "queda_minima_erosao": queda_minima_erosao,
             "queda_minima_alerta": queda_minima_alerta,
             "periodos_queda": periodos_queda,
+            "reducao_minima_sem_venda": reducao_minima_sem_venda,
         }
 
         self.thread_em_execucao = True
@@ -2065,7 +2079,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
                   periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"]),
                   not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao,
-                  queda_minima_alerta, queda_minima_erosao),
+                  queda_minima_alerta, queda_minima_erosao, reducao_minima_sem_venda),
             daemon=True,
         )
         self._thread_geracao.start()
@@ -2073,7 +2087,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
                                      cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao,
                                      excluir_periodo_atual, top_n_produtos, reducao_minima_erosao, queda_minima_alerta,
-                                     queda_minima_erosao):
+                                     queda_minima_erosao, reducao_minima_sem_venda):
         try:
             resultados = af.gerar_analises_completas(
                 df_filtrado, granularidades,
@@ -2089,6 +2103,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 reducao_minima_erosao=reducao_minima_erosao,
                 queda_minima_alerta=queda_minima_alerta,
                 queda_minima_erosao_reais=queda_minima_erosao,
+                reducao_minima_sem_venda=reducao_minima_sem_venda,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:
@@ -2132,6 +2147,17 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         descricoes_geracao = _construir_descricoes_dinamicas(getattr(self, "_parametros_geracao", {}))
 
+        # "sem_venda" tem uma coluna de receita por mês (nomes dinâmicos,
+        # ex. "ago/25") — não dá pra listar em COLUNAS_MOEDA_POR_ANALISE de
+        # antemão. Resolve aqui, uma vez, a partir do próprio resultado desta
+        # geração (qualquer granularidade serve, as colunas são as mesmas).
+        colunas_moeda_geracao = dict(COLUNAS_MOEDA_POR_ANALISE)
+        for analises in resultados_filtrados.values():
+            df_sem_venda = analises.get("sem_venda")
+            if df_sem_venda is not None and not df_sem_venda.empty:
+                colunas_moeda_geracao["sem_venda"] = _colunas_moeda_efetivas("sem_venda", df_sem_venda)
+                break
+
         self._definir_status(f"Exportando {formato}...")
         self._registrar_log(f"Exportando {formato} para: {caminho_saida}")
         try:
@@ -2145,14 +2171,14 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_pdf(
                     caminho_saida, resultados_filtrados, ROTULOS_RELATORIO_PDF_WORD, nome_usuario=self.perfil.get("nome", ""),
-                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
+                    colunas_moeda_por_analise=colunas_moeda_geracao, nome_empresa=nome_empresa,
                     descricao_analise=descricoes_geracao,
                 )
             else:
                 import exportadores_pdf_word
                 exportadores_pdf_word.exportar_relatorio_word(
                     caminho_saida, resultados_filtrados, ROTULOS_RELATORIO_PDF_WORD, nome_usuario=self.perfil.get("nome", ""),
-                    colunas_moeda_por_analise=COLUNAS_MOEDA_POR_ANALISE, nome_empresa=nome_empresa,
+                    colunas_moeda_por_analise=colunas_moeda_geracao, nome_empresa=nome_empresa,
                     descricao_analise=descricoes_geracao,
                 )
         except Exception as exc:
@@ -2375,6 +2401,7 @@ NOMES_ANALISE = {
     "alertas_queda": "Alertas_Queda",
     "erosao_geral": "Erosao_Geral",
     "erosao_clientes": "Erosao_Clientes",
+    "sem_venda": "Sem_Venda",
     "abc": "ABC_Clientes",
     "abc_produtos": "ABC_Produtos",
     "migracao_abc": "Migracao_ABC",
@@ -2413,6 +2440,7 @@ DESCRICAO_ANALISE = {
     "alertas_queda": "Produtos com queda de receita que persiste até o período mais recente — não um histórico antigo já recuperado. Ordenado pelo maior impacto financeiro (Queda em R$).",
     "erosao_geral": "Clientes cuja receita total (somando todos os produtos) caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
     "erosao_clientes": "Clientes cuja compra de um produto caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
+    "sem_venda": "Clientes que já compraram alguma vez, mas praticamente pararam — receita do mês mais recente caiu 90%+ frente ao pico histórico. Sem piso de R$ de propósito (diferente de Erosão de Clientes): pega também clientes de baixo volume. Uma coluna de receita por mês disponível na base, para ver a trajetória completa (comprava, parou), não só pico x atual.",
     "abc": "Segmentação de clientes por receita em faixas (Grupo 1/2/3/Demais), com os 5 clientes de maior receita por faixa e período.",
     "abc_produtos": "Segmentação de produtos por representatividade de receita (Grupo 1 = top X% da receita).",
     "migracao_abc": "Clientes que subiram ou desceram de faixa entre períodos consecutivos, com causa provável quando identificável com folga.",
@@ -2456,6 +2484,14 @@ def _construir_descricoes_dinamicas(parametros):
         f"mais recente{piso_alerta} — não um histórico antigo já recuperado. Ordenado pelo maior impacto "
         "financeiro (Queda em R$)."
     )
+
+    reducao_sem_venda = parametros.get("reducao_minima_sem_venda", 90.0)
+    descricoes["sem_venda"] = (
+        f"Clientes que já compraram alguma vez, mas praticamente pararam — receita do mês mais recente caiu "
+        f"{reducao_sem_venda:.0f}%+ frente ao pico histórico (sobrou no máximo {100 - reducao_sem_venda:.0f}% do "
+        "que já compraram no auge). Sem piso de R$ de propósito: pega também clientes de baixo volume. Uma "
+        "coluna de receita por mês disponível na base, para ver a trajetória completa, não só pico x atual."
+    )
     return descricoes
 
 COLUNAS_MOEDA_POR_ANALISE = {
@@ -2466,6 +2502,11 @@ COLUNAS_MOEDA_POR_ANALISE = {
     "alertas_queda": ["Receita Atual", "Receita Precedente à Queda", "Queda em R$"],
     "erosao_geral": ["Receita no Pico", "Receita Atual", "Queda em R$"],
     "erosao_clientes": ["Receita no Pico", "Receita Atual", "Queda em R$"],
+    # "sem_venda" tem uma coluna de receita por mês disponível na base —
+    # nomes dinâmicos (ex.: "ago/25"), não dá pra listar aqui de antemão.
+    # Ver _colunas_moeda_efetivas: computado a partir do próprio DataFrame
+    # na hora de exportar (tudo que não for Cliente/Grupo é moeda).
+    "sem_venda": [],
     "abc": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "abc_produtos": ["Receita", "Renuncia", "Renuncia_Acumulada"],
     "migracao_abc": [],
@@ -2477,6 +2518,19 @@ COLUNAS_MOEDA_POR_ANALISE = {
     "correlacao_produto_cliente": ["Reducao_Receita"],
     "impacto_financeiro_churn": ["Receita_Sob_Risco"],
 }
+
+
+def _colunas_moeda_efetivas(chave_analise, df_analise):
+    """
+    Lista de colunas monetárias pra formatar, resolvendo o caso especial de
+    "sem_venda": as colunas são uma por mês disponível na base (nomes
+    dinâmicos, ex. "ago/25"), impossível listar de antemão em
+    COLUNAS_MOEDA_POR_ANALISE — aqui todas as colunas exceto Cliente/Grupo
+    são receita, então tudo que sobra é moeda.
+    """
+    if chave_analise == "sem_venda":
+        return [c for c in df_analise.columns if c not in ("Cliente", "Grupo")]
+    return COLUNAS_MOEDA_POR_ANALISE.get(chave_analise)
 
 
 def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_personalizados=None, nome_usuario="", nome_empresa="", descricao_analise=None):
@@ -2502,7 +2556,7 @@ def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_perso
                 planilha.append(["Sem dados para esta análise/granularidade."])
                 continue
             _escrever_dataframe(
-                workbook, nome_aba, df_analise, COLUNAS_MOEDA_POR_ANALISE.get(chave_analise),
+                workbook, nome_aba, df_analise, _colunas_moeda_efetivas(chave_analise, df_analise),
                 descricao=descricoes.get(chave_analise),
             )
 

@@ -79,4 +79,11 @@ NOVIDADES_POR_VERSAO = {
         "Corrige a descrição de Erosão de Clientes e Alertas de Queda exportada no Excel/PDF/Word: sempre mostrava os valores padrão (ex.: 'caiu 50%+'), mesmo quando você configurava outro valor — agora reflete o que foi realmente usado na geração.",
         "Esclarece o rótulo 'Períodos mínimos seguidos em queda' (antes só dizia 'Períodos seguidos em queda', dando a entender um valor exato em vez de um piso mínimo).",
     ],
+    "1.6.10": [
+        "Alertas de Queda: 'Queda em R$' agora soma a perda de cada mês da sequência (não só a diferença entre o primeiro e o último mês) — uma queda que persiste por vários meses passa a pesar mais.",
+        "Novo relatório gerencial 'Sem Venda': clientes que já compraram mas praticamente pararam (queda de 90%+ do pico, sem piso de R$ — pega também clientes de baixo volume), com uma coluna de receita por mês para ver a trajetória completa.",
+        "Corrige a prévia de 'Produtos considerados'/'Clientes' na tela de Configurações: estava calculando a % de receita a partir da base inteira, ignorando lojas desmarcadas e clientes excluídos.",
+        "Corrige o rótulo das colunas 'Freq. Simples'/'Freq. Acumulado' na lista de produtos — nunca foram frequência de compra, sempre foram % de receita. Renomeadas para '% Receita'/'% Receita Acumulada'.",
+        "Poder de Compra: novo campo para limitar o máximo de clientes exibidos, mantendo sempre os de maior Poder de Compra primeiro.",
+    ],
 }

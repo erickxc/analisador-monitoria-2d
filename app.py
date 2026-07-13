@@ -205,6 +205,14 @@ GRUPOS_PARAMETROS_RELATORIO = [
         ],
         "legenda": "Sem piso de R$ de propósito — pega também clientes de baixo volume.",
     },
+    {
+        "gatilhos": ("poder_compra_clientes",),
+        "apos": "poder_compra_clientes",
+        "campos": [
+            ("entrada_top_n_poder_compra", "Máximo de clientes a exibir:", "", 6),
+        ],
+        "legenda": "Maior Poder de Compra primeiro. Vazio = todos os clientes.",
+    },
 ]
 
 
@@ -2033,6 +2041,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             queda_minima_alerta = float(self.entrada_queda_minima_alerta.get().replace(",", "."))
             queda_minima_erosao = float(self.entrada_queda_minima_erosao.get().replace(",", "."))
             reducao_minima_sem_venda = float(self.entrada_reducao_minima_sem_venda.get().replace(",", "."))
+            texto_top_n_poder_compra = self.entrada_top_n_poder_compra.get().strip()
+            top_n_poder_compra = int(texto_top_n_poder_compra) if texto_top_n_poder_compra else None
         except ValueError:
             messagebox.showerror("Parâmetros inválidos", "Verifique os campos numéricos em Configurações.")
             return
@@ -2058,6 +2068,9 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             return
         if not (0 <= reducao_minima_sem_venda <= 100):
             messagebox.showerror("Parâmetros inválidos", "Redução mínima para Sem Venda deve estar entre 0 e 100.")
+            return
+        if top_n_poder_compra is not None and top_n_poder_compra <= 0:
+            messagebox.showerror("Parâmetros inválidos", "Máximo de clientes a exibir (Poder de Compra) deve ser um número positivo (ou em branco).")
             return
 
         df_filtrado = self._dataframe_para_analise()
@@ -2098,7 +2111,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
                   periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"]),
                   not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao,
-                  queda_minima_alerta, queda_minima_erosao, reducao_minima_sem_venda),
+                  queda_minima_alerta, queda_minima_erosao, reducao_minima_sem_venda, top_n_poder_compra),
             daemon=True,
         )
         self._thread_geracao.start()
@@ -2106,7 +2119,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
     def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
                                      cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao,
                                      excluir_periodo_atual, top_n_produtos, reducao_minima_erosao, queda_minima_alerta,
-                                     queda_minima_erosao, reducao_minima_sem_venda):
+                                     queda_minima_erosao, reducao_minima_sem_venda, top_n_poder_compra):
         try:
             resultados = af.gerar_analises_completas(
                 df_filtrado, granularidades,
@@ -2123,6 +2136,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 queda_minima_alerta=queda_minima_alerta,
                 queda_minima_erosao_reais=queda_minima_erosao,
                 reducao_minima_sem_venda=reducao_minima_sem_venda,
+                top_n_poder_compra=top_n_poder_compra,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:

@@ -77,7 +77,7 @@ NOME_EMPRESA = "2D Consultores | Monitores"
 # publicada no GitHub. Usada por atualizacoes.py para avisar o usuário
 # quando existe uma versão mais nova disponível, e exibida na interface
 # (título da janela, cabeçalho, "Sobre") para facilitar suporte.
-VERSAO_ATUAL = "1.6.9"
+VERSAO_ATUAL = "1.6.10"
 REPOSITORIO_GITHUB = "erickxc/analisador-monitoria-2d"
 
 TITULO_JANELA = f"{NOME_SISTEMA} v{VERSAO_ATUAL} - {NOME_EMPRESA}"

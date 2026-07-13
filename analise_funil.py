@@ -214,7 +214,7 @@ def _media_top3_sem_outliers(linha_receita_mensal):
     return sem_outliers.sort_values(ascending=False).head(3).mean()
 
 
-def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False):
+def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False, top_n=None):
     """
     Poder de compra "de pico" de cada cliente: média dos 3 meses-calendário
     de MAIOR receita, descartando primeiro picos isolados que não refletem
@@ -244,6 +244,10 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     Decisão deliberada: a segmentação em grupos continua refletindo o
     cliente como um todo; poder de compra é uma métrica complementar, não
     substitui a segmentação por receita.
+
+    top_n: se informado, mantém só os N clientes de maior Poder_De_Compra
+    (None = todos — sem isso, a base completa vira uma lista gigante,
+    pouco prática de revisar).
 
     Retorna (sem período, uma linha por cliente): Cliente, Poder_De_Compra,
     Receita_Media_Recente, Desempenho_Vs_Potencial_Pct,
@@ -288,6 +292,8 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     resultado = resultado[["Cliente", "Poder_De_Compra", "Receita_Media_Recente", "Desempenho_Vs_Potencial_Pct",
                             "Meses_60pct_Abaixo_Potencial", "Percentual_Acumulado", "Grupo"]]
     resultado.sort_values("Poder_De_Compra", ascending=False, inplace=True)
+    if top_n:
+        resultado = resultado.head(top_n)
     resultado.reset_index(drop=True, inplace=True)
     return resultado
 
@@ -1558,7 +1564,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                               periodos_queda_consecutiva=2, callback_log=None, chaves_solicitadas=None,
                               desconsiderar_balcao=False, excluir_periodo_atual=True,
                               top_n_produtos=None, reducao_minima_erosao=50.0, queda_minima_alerta=0.0,
-                              queda_minima_erosao_reais=0.0, reducao_minima_sem_venda=90.0):
+                              queda_minima_erosao_reais=0.0, reducao_minima_sem_venda=90.0, top_n_poder_compra=None):
     """
     Roda as análises solicitadas para cada granularidade escolhida.
 
@@ -1722,6 +1728,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             logar(f"[{granularidade}] Calculando poder de compra agregado dos clientes...")
             analises["poder_compra_clientes"] = poder_compra_agregado(
                 df_periodo, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
+                top_n=top_n_poder_compra,
             ).drop(columns=["Percentual_Acumulado"]).rename(columns={
                 "Receita_Media_Recente": "Receita Média Recente (3 meses)",
                 "Desempenho_Vs_Potencial_Pct": "% de Variação vs. Potencial",

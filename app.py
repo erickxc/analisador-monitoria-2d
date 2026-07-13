@@ -2538,14 +2538,14 @@ def _perguntar_instancia_ja_aberta():
 
     tk.Label(
         janela, text=f"O {NOME_SISTEMA} já está aberto em outra janela.",
-        font=("Segoe UI", 10, "bold"), padx=24, pady=(22, 4),
-    ).pack()
+        font=("Segoe UI", 10, "bold"),
+    ).pack(padx=24, pady=(22, 4))
     tk.Label(
         janela,
         text="Enquanto houver mais de uma instância aberta, a atualização automática\n"
              "não consegue trocar o arquivo do programa.",
-        font=("Segoe UI", 9), fg="gray", padx=24, justify="center",
-    ).pack(pady=(0, 18))
+        font=("Segoe UI", 9), fg="gray", justify="center",
+    ).pack(padx=24, pady=(0, 18))
 
     def _escolher(valor):
         resultado["escolha"] = valor

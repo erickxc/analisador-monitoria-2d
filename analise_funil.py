@@ -526,11 +526,14 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     receita do último mês completo, se está em alta ou queda (variação %
     vs. o mês anterior) e dois clientes de destaque nesse produto nesse
     mês: quem mais comprou (Cliente_Destaque) e quem mais reduziu a
-    compra em relação ao mês anterior (Cliente_Em_Queda — "—" se ninguém
-    caiu), cada um com a variação % da PRÓPRIA compra desse cliente nesse
-    produto (mês atual vs. anterior — não confundir com a variação % do
-    produto como um todo). NaN quando o cliente não comprou nada no mês
-    anterior (sem base de comparação). desconsiderar_balcao exclui clientes-balcão (venda de
+    compra em relação ao mês anterior mas AINDA comprou algo esse mês
+    (Cliente_Em_Queda — exige Receita_Atual_Cliente > 0; um cliente que
+    foi a zero não conta aqui, isso é assunto de Erosão/Sem Venda —
+    "—" se ninguém se encaixar), cada um com a variação % da PRÓPRIA
+    compra desse cliente nesse produto (mês atual vs. anterior — não
+    confundir com a variação % do produto como um todo). NaN quando o
+    cliente não comprou nada no mês anterior (sem base de comparação).
+    desconsiderar_balcao exclui clientes-balcão (venda de
     balcão/consumidor final, ver REGEX_BALCAO) da escolha desses dois
     clientes — sem isso, "BALCAO AVULSO" domina como destaque/queda na
     maioria dos produtos, sem ser um cliente real e endereçável.
@@ -595,8 +598,11 @@ def status_alto_giro(df, desconsiderar_balcao=False):
     if desconsiderar_balcao:
         tabela_cliente = tabela_cliente[~tabela_cliente["Cliente"].str.contains(REGEX_BALCAO, na=False)]
 
+    # Cliente_Em_Queda exige compra > 0 no mês atual, além da redução em si —
+    # um cliente que foi a zero não está "comprando menos", parou de comprar
+    # esse produto (isso é assunto de Erosão/Sem Venda, não de Alto Giro).
     em_queda_ordenado = (
-        tabela_cliente[tabela_cliente["Reducao_Cliente"] > 0]
+        tabela_cliente[(tabela_cliente["Reducao_Cliente"] > 0) & (tabela_cliente["Receita_Atual_Cliente"] > 0)]
         .sort_values("Reducao_Cliente", ascending=False)
         .drop_duplicates("descricao")
         .set_index("descricao")

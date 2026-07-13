@@ -105,4 +105,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.16": [
         "Corrige o filtro de Grupo 1 do Alto Giro (v1.6.15): a classificação estava sendo calculada sem o mês mais recente, podendo incluir por engano um cliente que é Grupo 2 na visão completa (a mesma que aparece em Configurações). Agora usa sempre a receita total do cliente, igual à prévia de Configurações.",
     ],
+    "1.6.17": [
+        "Alto Giro: 'Cliente em Queda' agora exige que o cliente tenha comprado algo no mês atual (não só reduzido) — um cliente que foi a zero deixa de contar como 'em queda' aqui (isso já é assunto de Erosão/Sem Venda).",
+    ],
 }

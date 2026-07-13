@@ -250,17 +250,24 @@ def _piramide_comparativa(ax, df, campo, top_n, valor_minimo, rotulo_campo):
     return pivot[[periodo_anterior, periodo_atual]].reset_index()
 
 
-def desenhar_receita_agrupada(ax, df, agrupar_por="NOME_FABRICANTE", estilo="Dispersão", valor_minimo=0.0):
-    """View: receita agregada por fabricante ou por produto — Dispersão, Barras, Pizza ou Pirâmide."""
+def desenhar_receita_agrupada(ax, df, agrupar_por="NOME_FABRICANTE", estilo="Dispersão", valor_minimo=0.0, ordem="Decrescente", top_n=None):
+    """
+    View: receita agregada por fabricante ou por produto — Dispersão, Barras,
+    Pizza ou Pirâmide. ordem="Crescente" inverte o ranking (útil pra ver quem
+    vende menos, não só quem vende mais); top_n corta pra só as N pontas desse
+    ranking (None = mostra todas as categorias, sem corte).
+    """
     ax.clear()
     campo = "NOME_FABRICANTE" if agrupar_por == "Fabricante" else "descricao"
 
     if estilo == "Pirâmide":
-        return _piramide_comparativa(ax, df, campo, top_n=15, valor_minimo=valor_minimo, rotulo_campo=agrupar_por)
+        return _piramide_comparativa(ax, df, campo, top_n=top_n or 15, valor_minimo=valor_minimo, rotulo_campo=agrupar_por)
 
     agrupado = df.groupby(campo, as_index=False).agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
     agrupado = agrupado[agrupado["Receita"] >= valor_minimo]
-    agrupado.sort_values("Receita", ascending=False, inplace=True)
+    agrupado.sort_values("Receita", ascending=(ordem == "Crescente"), inplace=True)
+    if top_n:
+        agrupado = agrupado.head(top_n)
 
     if estilo == "Pizza":
         rotulos, valores = _preparar_fatias_pizza(agrupado[campo].tolist(), agrupado["Receita"].tolist())
@@ -275,15 +282,17 @@ def desenhar_receita_agrupada(ax, df, agrupar_por="NOME_FABRICANTE", estilo="Dis
     ax.set_xticks(range(len(agrupado)))
     ax.set_xticklabels(agrupado[campo], rotation=90, fontsize=6)
     ax.set_ylabel("Receita (R$)")
-    ax.set_title(f"Receita por {agrupar_por}")
+    titulo_n = f" (Top {top_n})" if top_n else ""
+    ax.set_title(f"Receita por {agrupar_por}{titulo_n} — {ordem.lower()}")
     return agrupado
 
 
-def desenhar_top_clientes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0):
+def desenhar_top_clientes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0, ordem="Decrescente"):
     """
-    Os top_n clientes de maior receita (soma de todo o período carregado).
-    Histograma ignora o corte top_n — mostra a distribuição de receita entre
-    TODOS os clientes, não só os maiores.
+    Os top_n clientes de maior receita (soma de todo o período carregado), ou
+    os top_n de MENOR receita se ordem="Crescente" (pra ver os piores, não só
+    os melhores). Histograma ignora ordem/top_n — mostra a distribuição de
+    receita entre TODOS os clientes.
     """
     ax.clear()
     if estilo == "Pirâmide":
@@ -291,7 +300,9 @@ def desenhar_top_clientes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0):
 
     agrupado_completo = df.groupby("Cliente", as_index=False).agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
     agrupado_completo = agrupado_completo[agrupado_completo["Receita"] >= valor_minimo]
-    agrupado_completo.sort_values("Receita", ascending=False, inplace=True)
+    ascendente = ordem == "Crescente"
+    agrupado_completo.sort_values("Receita", ascending=ascendente, inplace=True)
+    agrupado_completo = _anexar_mes_atual_anterior(agrupado_completo, df, "Cliente")
 
     if estilo == "Histograma":
         ax.hist(agrupado_completo["Receita"], bins=20, color=COR_PADRAO, edgecolor="white")
@@ -314,11 +325,12 @@ def desenhar_top_clientes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0):
     ax.set_xticks(range(len(agrupado)))
     ax.set_xticklabels(agrupado["Cliente"], rotation=90, fontsize=6)
     ax.set_ylabel("Receita (R$)")
-    ax.set_title(f"Top {top_n} Clientes por Receita")
+    rotulo_ordem = "menor" if ascendente else "maior"
+    ax.set_title(f"Top {top_n} Clientes por {rotulo_ordem} Receita")
     return agrupado
 
 
-def desenhar_top_fabricantes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0):
+def desenhar_top_fabricantes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0, ordem="Decrescente"):
     """Mesmo tratamento de desenhar_top_clientes, por fabricante."""
     ax.clear()
     if estilo == "Pirâmide":
@@ -326,7 +338,9 @@ def desenhar_top_fabricantes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0
 
     agrupado_completo = df.groupby("NOME_FABRICANTE", as_index=False).agg(Receita=("Receita", "sum"), QTD=("QTD", "sum"))
     agrupado_completo = agrupado_completo[agrupado_completo["Receita"] >= valor_minimo]
-    agrupado_completo.sort_values("Receita", ascending=False, inplace=True)
+    ascendente = ordem == "Crescente"
+    agrupado_completo.sort_values("Receita", ascending=ascendente, inplace=True)
+    agrupado_completo = _anexar_mes_atual_anterior(agrupado_completo, df, "NOME_FABRICANTE")
 
     if estilo == "Histograma":
         ax.hist(agrupado_completo["Receita"], bins=20, color=COR_PADRAO, edgecolor="white")
@@ -336,7 +350,6 @@ def desenhar_top_fabricantes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0
         return agrupado_completo
 
     agrupado = agrupado_completo.head(top_n)
-    agrupado = _anexar_mes_atual_anterior(agrupado, df, "NOME_FABRICANTE")
 
     if estilo == "Pizza":
         rotulos, valores = _preparar_fatias_pizza(agrupado["NOME_FABRICANTE"].tolist(), agrupado["Receita"].tolist())
@@ -351,7 +364,8 @@ def desenhar_top_fabricantes(ax, df, top_n=20, estilo="Barras", valor_minimo=0.0
     ax.set_xticks(range(len(agrupado)))
     ax.set_xticklabels(agrupado["NOME_FABRICANTE"], rotation=90, fontsize=6)
     ax.set_ylabel("Receita (R$)")
-    ax.set_title(f"Top {top_n} Fabricantes por Receita")
+    rotulo_ordem = "menor" if ascendente else "maior"
+    ax.set_title(f"Top {top_n} Fabricantes por {rotulo_ordem} Receita")
     return agrupado
 
 
@@ -487,6 +501,12 @@ class PainelGraficosFrame(ttk.Frame):
         self.label_opcao2 = ttk.Label(linha1, text="Quantidade de séries:")
         self.combo_opcao2 = ttk.Combobox(linha1, values=["3", "5", "10"], state="readonly", width=6)
 
+        self.label_ordem = ttk.Label(linha1, text="Ordem:")
+        self.combo_ordem = ttk.Combobox(linha1, values=["Decrescente", "Crescente"], state="readonly", width=11)
+
+        self.label_topn = ttk.Label(linha1, text="Mostrar (Top N, vazio = todos):")
+        self.entrada_topn = ttk.Entry(linha1, width=6)
+
         linha2 = ttk.Frame(self)
         linha2.pack(fill="x", padx=8, pady=(0, 4))
 
@@ -538,6 +558,24 @@ class PainelGraficosFrame(ttk.Frame):
             self.label_opcao2.pack_forget()
             self.combo_opcao2.pack_forget()
 
+    def _mostrar_ordem(self, mostrar):
+        if mostrar:
+            self.label_ordem.pack(side="left", padx=(12, 0))
+            self.combo_ordem.pack(side="left", padx=4)
+            if not self.combo_ordem.get():
+                self.combo_ordem.current(0)
+        else:
+            self.label_ordem.pack_forget()
+            self.combo_ordem.pack_forget()
+
+    def _mostrar_topn(self, mostrar):
+        if mostrar:
+            self.label_topn.pack(side="left", padx=(12, 0))
+            self.entrada_topn.pack(side="left", padx=4)
+        else:
+            self.label_topn.pack_forget()
+            self.entrada_topn.pack_forget()
+
     def _atualizar_opcoes(self):
         view = self.combo_view.get()
         estilos_disponiveis = ESTILOS_POR_VIEW.get(view, ["Dispersão"])
@@ -548,6 +586,12 @@ class PainelGraficosFrame(ttk.Frame):
 
         self.label_opcao.config(text="Colorir/Agrupar por:")
         self._mostrar_opcao2(False)
+        # Ordem (Crescente/Decrescente) vale pras 3 views de ranking por
+        # receita; "Mostrar Top N" só em "Receita por Fabricante ou Produto"
+        # — as outras duas já têm seu próprio combo "Quantidade de X".
+        views_ranking = ("Receita por Fabricante ou Produto", "Top Clientes por Receita", "Top Fabricantes por Receita")
+        self._mostrar_ordem(view in views_ranking)
+        self._mostrar_topn(view == "Receita por Fabricante ou Produto")
 
         if view in ("Vendas por Fabricante", "Vendas por Produto") and estilo == "Dispersão":
             self.combo_opcao["values"] = ["Faixa_ABC", "Fabricante"]
@@ -631,6 +675,11 @@ class PainelGraficosFrame(ttk.Frame):
         view = self.combo_view.get()
         estilo = self.combo_estilo.get()
         opcao = self.combo_opcao.get()
+        ordem = self.combo_ordem.get() or "Decrescente"
+        try:
+            top_n_livre = int(self.entrada_topn.get().strip()) if self.entrada_topn.get().strip() else None
+        except ValueError:
+            top_n_livre = None
 
         try:
             if view == "Vendas por Fabricante":
@@ -643,17 +692,18 @@ class PainelGraficosFrame(ttk.Frame):
                 )
             elif view == "Receita por Fabricante ou Produto":
                 tabela = desenhar_receita_agrupada(
-                    self.eixo, df, agrupar_por=opcao or "Fabricante", estilo=estilo, valor_minimo=valor_minimo
+                    self.eixo, df, agrupar_por=opcao or "Fabricante", estilo=estilo, valor_minimo=valor_minimo,
+                    ordem=ordem, top_n=top_n_livre,
                 )
             elif view == "Afinidade Cliente-Fabricante":
                 tabela = desenhar_afinidade_cliente_fabricante(self.eixo, df, abc_df, valor_minimo=valor_minimo)
             elif view == "Top Clientes por Receita":
                 tabela = desenhar_top_clientes(
-                    self.eixo, df, top_n=int(opcao) if opcao else 20, estilo=estilo, valor_minimo=valor_minimo
+                    self.eixo, df, top_n=int(opcao) if opcao else 20, estilo=estilo, valor_minimo=valor_minimo, ordem=ordem
                 )
             elif view == "Top Fabricantes por Receita":
                 tabela = desenhar_top_fabricantes(
-                    self.eixo, df, top_n=int(opcao) if opcao else 20, estilo=estilo, valor_minimo=valor_minimo
+                    self.eixo, df, top_n=int(opcao) if opcao else 20, estilo=estilo, valor_minimo=valor_minimo, ordem=ordem
                 )
             elif view == "Evolução no Tempo":
                 top_n = int(self.combo_opcao2.get()) if self.combo_opcao2.get() else 5

@@ -1343,23 +1343,18 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         clientes_excluidos = set(self._clientes_excluidos())
         # Mesma base usada pelo relatório de verdade (menos o corte de
-        # produtos, que é justamente o que esta prévia está calculando) —
+        # produtos, que é justamente o que este bloco está calculando) —
         # sem isso, a % de receita aqui vinha de TODAS as lojas, mesmo com
         # alguma desmarcada em "Lojas incluídas na análise", divergindo do
         # relatório gerado de fato.
         base_classificacao = self._filtrar_por_lojas(self.df)
 
-        classificacao_clientes = af.classificar_clientes_agregado(base_classificacao, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
-        mapa_grupo_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Faixa"]))
-        mapa_percentual_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Percentual_Individual"]))
-        for item in self.dados_clientes:
-            if item["cliente"] in clientes_excluidos:
-                item["grupo"] = "Excluído"
-                item["percentual"] = 0.0
-            else:
-                item["grupo"] = mapa_grupo_cliente.get(item["cliente"], "-")
-                item["percentual"] = mapa_percentual_cliente.get(item["cliente"], 0.0)
-
+        # Produtos primeiro (antes de clientes): decide quem é "alto giro"
+        # usando a base SEM esse próprio corte — não dá pra filtrar por alto
+        # giro antes de saber quais produtos são alto giro. self.estado_produtos
+        # é atualizado aqui embaixo, e o bloco de clientes logo abaixo depende
+        # dele (via _produtos_excluidos()) pra aplicar o mesmo filtro que o
+        # relatório de verdade aplica.
         classificacao_produtos = af.classificar_produtos_agregado(base_classificacao, corte_produtos, clientes_excluidos=clientes_excluidos)
         mapa_grupo_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Faixa"]))
         mapa_freq_simples_produto = dict(zip(classificacao_produtos["descricao"], classificacao_produtos["Freq_Simples"]))
@@ -1386,6 +1381,22 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             if item["chave"] not in self._produtos_manual:
                 self.estado_produtos[item["chave"]] = item["grupo"] == "Grupo 1"
 
+        # Clientes: Grupo é sempre pela receita TOTAL do cliente, NUNCA só a
+        # dos produtos de alto giro — mesmo com "somente produtos de alto
+        # giro" marcado, essa prévia (e a Migração de Grupo/Poder de Compra/
+        # Sem Venda gerados de fato — ver gerar_analises_completas/
+        # df_para_grupo) usam base_classificacao sem o corte de produto.
+        classificacao_clientes = af.classificar_clientes_agregado(base_classificacao, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
+        mapa_grupo_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Faixa"]))
+        mapa_percentual_cliente = dict(zip(classificacao_clientes["Cliente"], classificacao_clientes["Percentual_Individual"]))
+        for item in self.dados_clientes:
+            if item["cliente"] in clientes_excluidos:
+                item["grupo"] = "Excluído"
+                item["percentual"] = 0.0
+            else:
+                item["grupo"] = mapa_grupo_cliente.get(item["cliente"], "-")
+                item["percentual"] = mapa_percentual_cliente.get(item["cliente"], 0.0)
+
         nomes_grupos_clientes = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais", "Balcão", "Excluído"]
         if hasattr(self, "combo_grupo_clientes"):
             self.combo_grupo_clientes["values"] = ["Todos"] + nomes_grupos_clientes
@@ -1400,7 +1411,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             if self.combo_grupo_produtos.get() == "Todos":
                 self.combo_grupo_produtos.set("Grupo 1")
 
-        contagens = af.contar_clientes_por_grupo(self.df, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
+        contagens = af.contar_clientes_por_grupo(base_classificacao, clientes_excluidos, cortes, desconsiderar_balcao=self.check_balcao.instate(["selected"]))
         self._exibir_contagens_grupos(cortes, contagens)
 
         self._renderizar_clientes(self.entrada_busca_clientes.get())
@@ -2034,6 +2045,12 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         if df_filtrado.empty:
             messagebox.showerror("Relatório", "Nenhuma linha restante após o filtro de lojas/produtos. Verifique se ao menos uma loja está marcada em Configurações.")
             return
+        # Grupo (1/2/3/Demais) é sempre pela receita TOTAL do cliente, mesmo
+        # com "somente produtos de alto giro" marcado — df_filtrado já pode
+        # vir sem esses produtos, então toda classificação de Grupo (Migração,
+        # Poder de Compra, Sem Venda, filtro de Alto Giro) usa esta base à
+        # parte, só filtrada por loja (ver gerar_analises_completas).
+        df_para_grupo = self._filtrar_por_lojas(self.df)
 
         clientes_excluidos = self._clientes_excluidos()
         self.granularidade_referencia = granularidades[0]
@@ -2065,7 +2082,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         self._thread_geracao = threading.Thread(
             target=self._executar_geracao_em_thread,
-            args=(df_filtrado, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
+            args=(df_filtrado, df_para_grupo, granularidades, clientes_excluidos, tuple(cortes_grupos), corte_produtos,
                   periodos_queda, set(chaves_selecionadas), self.check_balcao.instate(["selected"]),
                   not self.check_incluir_periodo_atual.instate(["selected"]), top_n_produtos, reducao_minima_erosao,
                   queda_minima_alerta, queda_minima_erosao, reducao_minima_sem_venda, top_n_poder_compra),
@@ -2073,7 +2090,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         )
         self._thread_geracao.start()
 
-    def _executar_geracao_em_thread(self, df_filtrado, granularidades, clientes_excluidos,
+    def _executar_geracao_em_thread(self, df_filtrado, df_para_grupo, granularidades, clientes_excluidos,
                                      cortes_grupos, corte_produtos, periodos_queda, chaves_selecionadas, desconsiderar_balcao,
                                      excluir_periodo_atual, top_n_produtos, reducao_minima_erosao, queda_minima_alerta,
                                      queda_minima_erosao, reducao_minima_sem_venda, top_n_poder_compra):
@@ -2094,6 +2111,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
                 queda_minima_erosao_reais=queda_minima_erosao,
                 reducao_minima_sem_venda=reducao_minima_sem_venda,
                 top_n_poder_compra=top_n_poder_compra,
+                df_para_grupo=df_para_grupo,
             )
             self.fila_eventos.put(("concluido", resultados))
         except Exception as exc:

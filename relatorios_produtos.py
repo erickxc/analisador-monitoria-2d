@@ -52,7 +52,7 @@ def _media_top3_sem_outliers(linha_receita_mensal):
     return sem_outliers.sort_values(ascending=False).head(3).mean()
 
 
-def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False, top_n=None):
+def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False, top_n=None, df_para_grupo=None):
     """
     Poder de compra "de pico" de cada cliente: média dos 3 meses-calendário
     de MAIOR receita, descartando primeiro picos isolados que não refletem
@@ -83,6 +83,12 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     cliente como um todo; poder de compra é uma métrica complementar, não
     substitui a segmentação por receita.
 
+    df_para_grupo: base alternativa usada SÓ para calcular Grupo/
+    Percentual_Acumulado (None = usa o próprio `df`). Existe porque `df`
+    pode já vir filtrado por "somente produtos de alto giro" — Grupo deve
+    refletir a receita total do cliente independente desse filtro, então o
+    chamador passa aqui a base sem esse corte quando ele estiver ativo.
+
     top_n: se informado, mantém só os N clientes de maior Poder_De_Compra
     (None = todos — sem isso, a base completa vira uma lista gigante,
     pouco prática de revisar).
@@ -112,7 +118,8 @@ def poder_compra_agregado(df, clientes_excluidos=None, cortes=(30.0, 50.0, 60.0)
     meses_abaixo = meses_abaixo.where(top3_por_cliente > 0, 0)
     meses_abaixo.name = "Meses_60pct_Abaixo_Potencial"
 
-    classificacao = classificar_clientes_agregado(df, clientes_excluidos, cortes, desconsiderar_balcao)
+    base_grupo = df_para_grupo if df_para_grupo is not None else df
+    classificacao = classificar_clientes_agregado(base_grupo, clientes_excluidos, cortes, desconsiderar_balcao)
     resultado = classificacao[["Cliente", "Percentual_Acumulado", "Faixa"]].rename(columns={"Faixa": "Grupo"})
     resultado = resultado.merge(top3_por_cliente, on="Cliente", how="left")
     resultado = resultado.merge(media_recente, on="Cliente", how="left")

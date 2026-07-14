@@ -121,4 +121,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.22": [
         "Corrige uma falha silenciosa na atualização automática: se um antivírus apagasse o instalador baixado antes da troca do programa, a atualização era dada como concluída sem realmente trocar o executável, sem nenhum aviso. Agora o programa detecta essa falha e avisa claramente na próxima abertura, explicando o motivo.",
     ],
+    "1.6.23": [
+        "Corrige a classificação de Grupo (1/2/3/Demais): Migração de Grupo, ABC, Poder de Compra, Sem Venda, filtro 'Grupo 1' do Alto Giro e a prévia de Configurações agora usam sempre a receita TOTAL do cliente para decidir o grupo — antes, com 'somente produtos de alto giro' marcado, cada tela podia calcular um grupo diferente para o mesmo cliente, sem explicação visível.",
+    ],
 }

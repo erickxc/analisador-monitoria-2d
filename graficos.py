@@ -412,7 +412,15 @@ def desenhar_evolucao_temporal(ax, df, agrupar_por="Nenhum", top_n=5, estilo="Li
     Receita por Periodo_Mensal ao longo do tempo: "Nenhum" soma a base
     inteira numa única série; Fabricante/Produto/Cliente traça uma série por
     categoria, limitada aos top_n de maior receita total (senão o gráfico
-    fica ilegível com dezenas de linhas/barras sobrepostas).
+    fica ilegível com dezenas de linhas/barras sobrepostas). "Nenhum" ignora
+    "Linha (%)" (participação de uma série contra ela mesma é sempre 100%,
+    sem informação nenhuma) — sempre plota valor absoluto nesse caso.
+
+    "Linha (%)": participação % de cada categoria na receita TOTAL da base
+    em cada período (não só a soma do Top N) — por isso soma "Outros" (as
+    categorias fora do Top N) como uma série extra, senão os % mostrados
+    ficariam inflados (relativos só ao Top N) e as linhas não fechariam a
+    leitura de "de onde vem 100% da receita" mês a mês.
     """
     ax.clear()
     campo = {"Fabricante": "NOME_FABRICANTE", "Produto": "descricao", "Cliente": "Cliente"}.get(agrupar_por)
@@ -434,6 +442,18 @@ def desenhar_evolucao_temporal(ax, df, agrupar_por="Nenhum", top_n=5, estilo="Li
     pivot = base.groupby([campo, "Periodo_Mensal"])["Receita"].sum().unstack(campo).fillna(0.0)
     pivot.sort_index(inplace=True)
 
+    if estilo == "Linha (%)":
+        total_periodo = df.groupby("Periodo_Mensal")["Receita"].sum().replace(0.0, float("nan"))
+        pivot_pct = pivot.div(total_periodo, axis=0).fillna(0.0) * 100
+        pivot_pct["Outros"] = (100 - pivot_pct.sum(axis=1)).clip(lower=0.0)
+        for categoria in pivot_pct.columns:
+            ax.plot(pivot_pct.index, pivot_pct[categoria], marker="o", label=categoria)
+        ax.legend(fontsize="x-small")
+        ax.tick_params(axis="x", rotation=45, labelsize=7)
+        ax.set_ylabel("Participação na receita total (%)")
+        ax.set_title(f"Participação de Mercado por {agrupar_por} ao longo do tempo (Top {top_n} + Outros)")
+        return pivot_pct.reset_index()
+
     if estilo == "Barras":
         pivot.plot(kind="bar", ax=ax)
     else:
@@ -453,7 +473,7 @@ ESTILOS_POR_VIEW = {
     "Afinidade Cliente-Fabricante": ["Dispersão"],
     "Top Clientes por Receita": ["Barras", "Dispersão", "Pizza", "Histograma", "Pirâmide"],
     "Top Fabricantes por Receita": ["Barras", "Dispersão", "Pizza", "Histograma", "Pirâmide"],
-    "Evolução no Tempo": ["Linha", "Barras"],
+    "Evolução no Tempo": ["Linha", "Barras", "Linha (%)"],
 }
 
 

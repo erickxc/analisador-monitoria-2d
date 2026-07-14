@@ -72,11 +72,29 @@ def verificar_nova_versao():
     return tag, url_pagina, url_download_exe
 
 
+class DownloadIncompletoError(Exception):
+    """Levantada quando a conexão cai/é cortada (proxy, antivírus, rede
+    instável) antes do download terminar — resposta.read() retorna b""
+    (fim de leitura) sem levantar exceção nenhuma, então sem essa checagem
+    o arquivo truncado era tratado como sucesso e instalado por cima do
+    .exe atual (reproduzido e confirmado: instalação "concluída" que
+    deixava um .exe de ~9 MB no lugar de um de ~127 MB — o programa não
+    conseguia mais abrir, e a versão nunca mudava por mais que o usuário
+    tentasse atualizar de novo, porque o novo download sempre sofria do
+    mesmo corte antes de completar)."""
+
+
 def baixar_atualizacao(url_download_exe, callback_progresso=None):
     """
     Baixa o novo executável para um arquivo temporário e retorna o caminho.
     callback_progresso(percentual_int) é chamado periodicamente, se informado
     (percentual fica 0 se o servidor não informar o tamanho do arquivo).
+
+    Levanta DownloadIncompletoError se a conexão cair no meio do download
+    (bytes baixados != Content-Length informado pelo servidor) — o arquivo
+    parcial é apagado antes de levantar, pra nunca sobrar um .exe truncado
+    em %TEMP% que uma tentativa futura possa confundir com um download
+    válido.
     """
     destino = os.path.join(os.environ.get("TEMP", "."), NOME_EXE_TEMPORARIO)
     requisicao = urllib.request.Request(url_download_exe, headers={"User-Agent": "Monitor2D-updater"})
@@ -92,6 +110,14 @@ def baixar_atualizacao(url_download_exe, callback_progresso=None):
                 baixado += len(bloco)
                 if callback_progresso:
                     callback_progresso(int(baixado * 100 / total) if total else 0)
+
+    if total and baixado != total:
+        os.remove(destino)
+        raise DownloadIncompletoError(
+            f"Download incompleto: recebidos {baixado} de {total} bytes esperados. "
+            "A conexão foi interrompida antes do fim (rede instável, proxy ou antivírus "
+            "cortando a transferência) — tente novamente, ou baixe manualmente pela página de releases."
+        )
     return destino
 
 

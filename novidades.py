@@ -111,4 +111,8 @@ NOVIDADES_POR_VERSAO = {
     "1.6.18": [
         "Alto Giro: 'Cliente Destaque' e 'Cliente em Queda' agora são quem mais CRESCEU e quem mais CAIU em % de compra do produto (não mais quem tem maior faturamento) — considerando clientes de todos os grupos, com prioridade Grupo 1 > Grupo 2 > Grupo 3 > demais. Receita/Status do produto continuam só com clientes Grupo 1.",
     ],
+    "1.6.20": [
+        "Corrige a atualização automática que baixava mas nunca terminava de instalar: quando a conexão caía no meio do download (rede instável, proxy ou antivírus), o arquivo incompleto era instalado por cima do programa atual, corrompendo-o. Agora o download é validado antes de instalar.",
+        "Novo estilo 'Linha (%)' no gráfico 'Evolução no Tempo': participação de mercado por fabricante/produto/cliente ao longo do tempo, com 'Outros' agrupando quem fica fora do Top N.",
+    ],
 }

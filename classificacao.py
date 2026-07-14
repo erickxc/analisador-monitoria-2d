@@ -90,7 +90,14 @@ def classificar_faixas(df, granularidade="Mensal", campo="Cliente", excluidos=No
                         cortes=(30.0, 50.0, 60.0), nomes_grupos=None, desconsiderar_balcao=False):
     """
     Classifica entidades (clientes ou produtos) em faixas por representatividade
-    acumulada no faturamento, período a período.
+    na receita ACUMULADA até cada período — soma corrida desde o primeiro
+    período em que a entidade aparece na base, não a receita isolada daquele
+    mês. Um mês fraco isolado não derruba a faixa de quem já tem histórico
+    grande; só uma mudança que persiste ao longo de vários períodos move a
+    posição na curva acumulada. Mesmo conceito de "Grupo" usado em
+    classificar_clientes_agregado (Poder de Compra/Alto Giro) — a diferença é
+    que aqui é recalculado a cada período (permite detectar migração real),
+    em vez de um número fixo pra todo o histórico (não migra nunca).
 
     cortes: percentuais cumulativos crescentes (ex.: (30, 50, 60)). A última
     faixa (nome "Demais") recebe tudo que ultrapassar o último corte.
@@ -102,9 +109,15 @@ def classificar_faixas(df, granularidade="Mensal", campo="Cliente", excluidos=No
     "Balcão" própria, com Percentual_Individual real (não zerado) — mesma
     regra usada na prévia da tela (classificar_clientes_agregado).
 
-    Retorna um DataFrame com: campo, Receita, Percentual_Acumulado,
-    Percentual_Individual, Periodo, Faixa_ABC, Frequencia_Simples,
-    Frequencia_Acumulada, Renuncia, Renuncia_Acumulada, Renuncia_Percentual.
+    Retorna um DataFrame com: campo, Receita (receita ISOLADA daquele
+    período — não é ela que decide a faixa, só mantida pra mostrar a
+    atividade real do mês e alimentar Renuncia), Receita_Acumulada_Total
+    (soma cronológica real da receita até aquele período — inclui
+    estornos/devoluções, por isso não é estritamente monotônica; é essa
+    coluna que decide Percentual_Acumulado/Percentual_Individual/Faixa_ABC),
+    Percentual_Acumulado, Percentual_Individual, Periodo, Faixa_ABC,
+    Frequencia_Simples, Frequencia_Acumulada, Renuncia, Renuncia_Acumulada,
+    Renuncia_Percentual.
     """
     excluidos = set(excluidos or [])
     cortes = list(cortes)
@@ -114,67 +127,91 @@ def classificar_faixas(df, granularidade="Mensal", campo="Cliente", excluidos=No
     col_periodo = COLUNA_PERIODO[granularidade]
     base = df[~df[campo].isin(excluidos)] if excluidos else df
 
-    resultados = []
-    for periodo, grupo in base.groupby(col_periodo):
-        if desconsiderar_balcao and campo == "Cliente":
-            mascara_balcao = grupo[campo].str.contains(REGEX_BALCAO, na=False)
-            grupo_normal = grupo[~mascara_balcao]
-            grupo_balcao = grupo[mascara_balcao]
-        else:
-            grupo_normal = grupo
-            grupo_balcao = pd.DataFrame(columns=grupo.columns)
+    colunas_base = [campo, "Receita", "Receita_Acumulada_Total", "Percentual_Acumulado",
+                    "Percentual_Individual", "Periodo", "Faixa_ABC"]
+    periodos_ordenados = _ordenar_periodos(base[col_periodo].unique(), granularidade)
+    if not periodos_ordenados:
+        return pd.DataFrame(columns=colunas_base)
+    ordem_periodo = {p: i for i, p in enumerate(periodos_ordenados)}
 
-        receita_entidade = (
-            grupo_normal.groupby(campo, as_index=False)["Receita"].sum()
-            .sort_values("Receita", ascending=False)
+    # Receita por (entidade, período), com balcão ainda misturado — o
+    # acumulado corrido precisa ver a série completa de cada entidade pra
+    # somar certo; a separação normal/balcão só importa depois, na hora de
+    # decidir quem entra no ranking/cortes de cada período.
+    receita_periodo = (
+        base.groupby([campo, col_periodo], as_index=False)["Receita"].sum()
+        .rename(columns={col_periodo: "Periodo"})
+    )
+    receita_periodo["_ordem"] = receita_periodo["Periodo"].map(ordem_periodo)
+    receita_periodo.sort_values([campo, "_ordem"], inplace=True)
+    # Mesmo idioma de calcular_renuncia (abaixo, mesmo arquivo): ordena por
+    # entidade+período e acumula — só entram linhas onde a entidade já
+    # apareceu antes; não preenche buraco de calendário com zero, então a
+    # população de (entidade, período) classificada continua igual à de
+    # antes desta mudança (só a métrica de ranking dentro dela é que muda).
+    receita_periodo["Receita_Acumulada_Total"] = receita_periodo.groupby(campo)["Receita"].cumsum()
+
+    if desconsiderar_balcao and campo == "Cliente":
+        mascara_balcao_global = receita_periodo[campo].str.contains(REGEX_BALCAO, na=False)
+    else:
+        mascara_balcao_global = pd.Series(False, index=receita_periodo.index)
+
+    def faixa(percentual_acumulado):
+        for corte, nome in zip(cortes, nomes_grupos):
+            if percentual_acumulado <= corte:
+                return nome
+        return nomes_grupos[-1]
+
+    resultados = []
+    for periodo in periodos_ordenados:
+        linhas_periodo = receita_periodo[receita_periodo["Periodo"] == periodo]
+        if linhas_periodo.empty:
+            continue
+        mascara_balcao = mascara_balcao_global.loc[linhas_periodo.index]
+        entidade_normal = (
+            linhas_periodo[~mascara_balcao].sort_values("Receita_Acumulada_Total", ascending=False)
             .reset_index(drop=True)
         )
-        receita_total = receita_entidade["Receita"].sum()
-        if receita_total <= 0:
-            receita_entidade["Percentual_Acumulado"] = 0.0
-            receita_entidade["Percentual_Individual"] = 0.0
+        entidade_balcao = (
+            linhas_periodo[mascara_balcao].sort_values("Receita_Acumulada_Total", ascending=False)
+            .reset_index(drop=True)
+        )
+
+        total_acumulado_normal = entidade_normal["Receita_Acumulada_Total"].sum()
+        if total_acumulado_normal <= 0:
+            entidade_normal["Percentual_Acumulado"] = 0.0
+            entidade_normal["Percentual_Individual"] = 0.0
         else:
-            receita_entidade["Percentual_Acumulado"] = (
-                receita_entidade["Receita"].cumsum() / receita_total * 100
+            entidade_normal["Percentual_Acumulado"] = (
+                entidade_normal["Receita_Acumulada_Total"].cumsum() / total_acumulado_normal * 100
             )
-            receita_entidade["Percentual_Individual"] = receita_entidade["Receita"] / receita_total * 100
-        receita_entidade["Periodo"] = periodo
+            entidade_normal["Percentual_Individual"] = (
+                entidade_normal["Receita_Acumulada_Total"] / total_acumulado_normal * 100
+            )
+        entidade_normal["Faixa_ABC"] = entidade_normal["Percentual_Acumulado"].apply(faixa)
 
-        def faixa(percentual_acumulado):
-            for corte, nome in zip(cortes, nomes_grupos):
-                if percentual_acumulado <= corte:
-                    return nome
-            return nomes_grupos[-1]
-
-        receita_entidade["Faixa_ABC"] = receita_entidade["Percentual_Acumulado"].apply(faixa)
-
-        if not grupo_balcao.empty:
+        if not entidade_balcao.empty:
             # Balcão fica de fora da classificação em grupos (o corte acima
-            # é calculado só com grupo_normal), mas o % individual mostrado
-            # é real — não faz sentido excluir da conta E mostrar receita
-            # zerada. Fica sempre em faixa "Balcão" própria, nunca misturado
-            # com "Grupo 1" (que deve refletir só quem participa de fato da
-            # segmentação por receita).
-            receita_balcao = (
-                grupo_balcao.groupby(campo, as_index=False)["Receita"].sum()
-                .sort_values("Receita", ascending=False)
-                .reset_index(drop=True)
+            # é calculado só com entidade_normal), mas o % individual
+            # mostrado é real — não faz sentido excluir da conta E mostrar
+            # receita zerada. Fica sempre em faixa "Balcão" própria, nunca
+            # misturado com "Grupo 1" (que deve refletir só quem participa
+            # de fato da segmentação por receita).
+            entidade_balcao["Percentual_Acumulado"] = float("nan")
+            entidade_balcao["Percentual_Individual"] = (
+                entidade_balcao["Receita_Acumulada_Total"] / total_acumulado_normal * 100
+                if total_acumulado_normal > 0 else 0.0
             )
-            receita_balcao["Percentual_Acumulado"] = float("nan")
-            receita_balcao["Percentual_Individual"] = (
-                receita_balcao["Receita"] / receita_total * 100 if receita_total > 0 else 0.0
-            )
-            receita_balcao["Periodo"] = periodo
-            receita_balcao["Faixa_ABC"] = "Balcão"
-            receita_entidade = pd.concat([receita_balcao, receita_entidade], ignore_index=True)
+            entidade_balcao["Faixa_ABC"] = "Balcão"
+            entidade_normal = pd.concat([entidade_balcao, entidade_normal], ignore_index=True)
 
-        resultados.append(receita_entidade)
+        resultados.append(entidade_normal)
 
-    colunas_base = [campo, "Receita", "Percentual_Acumulado", "Percentual_Individual", "Periodo", "Faixa_ABC"]
     if not resultados:
         classificado = pd.DataFrame(columns=colunas_base)
     else:
         classificado = pd.concat(resultados, ignore_index=True)
+    classificado.drop(columns=["_ordem"], inplace=True, errors="ignore")
 
     frequencia = calcular_frequencia(base, granularidade, campo, desconsiderar_balcao=desconsiderar_balcao)
     renuncia = calcular_renuncia(base, granularidade, campo)
@@ -190,25 +227,30 @@ def classificar_faixas(df, granularidade="Mensal", campo="Cliente", excluidos=No
         "Renuncia_Acumulada", "Renuncia_Percentual",
     ]].fillna(0)
 
-    periodos_ordenados = _ordenar_periodos(classificado["Periodo"].unique(), granularidade)
-    ordem_periodo = {p: i for i, p in enumerate(periodos_ordenados)}
     classificado["_ordem"] = classificado["Periodo"].map(ordem_periodo)
-    classificado.sort_values(["_ordem", "Percentual_Acumulado", "Receita"], ascending=[True, True, False], inplace=True)
+    classificado.sort_values(
+        ["_ordem", "Percentual_Acumulado", "Receita_Acumulada_Total"], ascending=[True, True, False], inplace=True,
+    )
     classificado.drop(columns=["_ordem"], inplace=True)
     classificado.reset_index(drop=True, inplace=True)
     return classificado
 
 
 def _limitar_top_por_grupo(classificado, top_por_grupo):
-    """Mantém só as `top_por_grupo` linhas de maior Receita em cada (Periodo, Faixa_ABC). None = sem corte."""
+    """
+    Mantém só as `top_por_grupo` linhas de maior Receita_Acumulada_Total em
+    cada (Periodo, Faixa_ABC) — quem realmente sustenta a posição do grupo
+    (maior receita acumulada até aquele período), não quem vendeu mais só
+    naquele mês isolado. None = sem corte.
+    """
     if top_por_grupo is None or classificado.empty:
         return classificado
     limitado = (
-        classificado.sort_values("Receita", ascending=False)
+        classificado.sort_values("Receita_Acumulada_Total", ascending=False)
         .groupby(["Periodo", "Faixa_ABC"], group_keys=False)
         .head(top_por_grupo)
     )
-    limitado.sort_values(["Periodo", "Faixa_ABC", "Receita"], ascending=[True, True, False], inplace=True)
+    limitado.sort_values(["Periodo", "Faixa_ABC", "Receita_Acumulada_Total"], ascending=[True, True, False], inplace=True)
     limitado.reset_index(drop=True, inplace=True)
     return limitado
 

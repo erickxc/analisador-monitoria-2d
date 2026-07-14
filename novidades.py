@@ -118,4 +118,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.21": [
         "Corrige a classificação de Grupo (1/2/3/Demais) no relatório ABC e na Migração de Grupo: agora considera a receita acumulada do cliente/produto até aquele período (mesmo critério já usado em Poder de Compra/Alto Giro), não mais só a receita daquele mês isolado — um mês fraco pontual deixa de tirar do Grupo 1 quem tem histórico grande.",
     ],
+    "1.6.22": [
+        "Corrige uma falha silenciosa na atualização automática: se um antivírus apagasse o instalador baixado antes da troca do programa, a atualização era dada como concluída sem realmente trocar o executável, sem nenhum aviso. Agora o programa detecta essa falha e avisa claramente na próxima abertura, explicando o motivo.",
+    ],
 }

@@ -32,6 +32,17 @@ from recursos import (
 import perfil
 import atualizacoes
 from novidades import NOVIDADES_POR_VERSAO
+from catalogo import (
+    CATALOGO_RELATORIOS, COLUNAS_MOEDA_POR_ANALISE, COR_ACCENT, COR_CABECALHO,
+    DESCRICAO_ANALISE, GRUPOS_PARAMETROS_RELATORIO, NOMES_ANALISE, ROTULOS_RELATORIO_PDF_WORD,
+    _colunas_moeda_efetivas, _construir_descricoes_dinamicas, _formatar_moeda_br,
+)
+from inicializacao import (
+    _declarar_dpi_aware, _enviar_comando_instancia_existente,
+    _passo_limpar_logs_antigos, _passo_verificar_arquivos_sistema, _passo_verificar_banco_local,
+    _pedir_permissao_primeira_execucao, _perguntar_instancia_ja_aberta, _preparar_logger,
+    _tentar_registrar_instancia_unica,
+)
 
 try:
     from tkinterdnd2 import TkinterDnD
@@ -39,18 +50,16 @@ try:
 except ImportError:
     JANELA_BASE = tk.Tk
 
-# As dependências pesadas (pandas, openpyxl, matplotlib e os módulos do motor
-# de análise) são importadas em _importar_dependencias_pesadas(), chamada
-# pela tela de splash — assim a janela inicial aparece imediatamente, sem
-# esperar essas bibliotecas carregarem. Os nomes abaixo são preenchidos nesse
-# momento e usados pelo restante do arquivo (todos referenciados dentro de
+# As dependências pesadas (pandas, matplotlib e os módulos do motor de
+# análise) são importadas em _importar_dependencias_pesadas(), chamada pela
+# tela de splash — assim a janela inicial aparece imediatamente, sem esperar
+# essas bibliotecas carregarem. Os nomes abaixo são preenchidos nesse momento
+# e usados pelo restante do arquivo (todos referenciados dentro de
 # métodos/funções, nunca no corpo de uma classe, então a resolução do nome
-# só acontece quando o código já rodou).
+# só acontece quando o código já rodou). openpyxl não entra aqui — mora em
+# exportador_excel.py, importado sob demanda só na primeira exportação em
+# Excel (mesmo padrão de exportadores_pdf_word.py para PDF/Word).
 pd = None
-Workbook = None
-Font = PatternFill = Alignment = None
-get_column_letter = None
-ImagemExcel = None
 af = pb = gf = None
 sv_ttk = None
 
@@ -59,18 +68,6 @@ def _passo_importar_pandas():
     global pd
     import pandas as _pd
     pd = _pd
-
-
-def _passo_importar_openpyxl():
-    global Workbook, Font, PatternFill, Alignment, get_column_letter, ImagemExcel
-    from openpyxl import Workbook as _Workbook
-    from openpyxl.styles import Font as _Font, PatternFill as _PatternFill, Alignment as _Alignment
-    from openpyxl.utils import get_column_letter as _get_column_letter
-    from openpyxl.drawing.image import Image as _ImagemExcel
-    Workbook = _Workbook
-    Font, PatternFill, Alignment = _Font, _PatternFill, _Alignment
-    get_column_letter = _get_column_letter
-    ImagemExcel = _ImagemExcel
 
 
 def _passo_importar_motor():
@@ -97,29 +94,6 @@ def _passo_importar_tema_visual():
     sv_ttk = _sv_ttk
 
 
-def _passo_verificar_banco_local():
-    perfil.carregar_perfil()  # exercita criação/leitura real do banco SQLite local
-
-
-def _passo_verificar_arquivos_sistema():
-    if not os.path.exists(CAMINHO_LOGO):
-        raise FileNotFoundError(f"logo não encontrada em {CAMINHO_LOGO}")
-
-
-def _passo_limpar_logs_antigos(dias=30):
-    pasta_logs = os.path.join(pasta_base_execucao(), "logs")
-    if not os.path.isdir(pasta_logs):
-        return
-    limite = datetime.now().timestamp() - dias * 86400
-    for nome_arquivo in os.listdir(pasta_logs):
-        caminho = os.path.join(pasta_logs, nome_arquivo)
-        try:
-            if os.path.isfile(caminho) and os.path.getmtime(caminho) < limite:
-                os.remove(caminho)
-        except OSError:
-            pass
-
-
 def construir_etapas_preparacao():
     """
     Sequência de verificações reais executadas pela splash antes de abrir a
@@ -128,7 +102,6 @@ def construir_etapas_preparacao():
     """
     return [
         ("Verificando bibliotecas de dados (pandas)...", _passo_importar_pandas),
-        ("Verificando geração de planilhas (openpyxl)...", _passo_importar_openpyxl),
         ("Carregando motor de análise...", _passo_importar_motor),
         ("Carregando construtor de relatórios personalizados...", _passo_importar_construtor_relatorios),
         ("Verificando geração de gráficos (matplotlib)...", _passo_importar_graficos),
@@ -137,101 +110,6 @@ def construir_etapas_preparacao():
         ("Verificando arquivos de sistema (logo, ícones)...", _passo_verificar_arquivos_sistema),
         ("Limpando arquivos de log antigos (+30 dias)...", _passo_limpar_logs_antigos),
     ]
-
-
-COR_CABECALHO = "1F4E78"
-COR_ACCENT = f"#{COR_CABECALHO}"  # mesma cor de destaque usada nos cabeçalhos do Excel
-
-# Catálogo de relatórios prontos oferecidos na aba "Relatório Padrão", agrupados
-# por categoria para facilitar a leitura. Cada item mapeia um título de negócio
-# para as chaves internas já calculadas por analise_funil.gerar_analises_completas.
-CATALOGO_RELATORIOS = [
-    ("Relatórios Gerais", [
-        ("top_produtos", "Venda por Produto (Top Produtos)"),
-        ("evolucao_produtos", "Tendência de Produtos"),
-        ("abc", "Faturamento e Segmentação de Clientes (ABC)"),
-        ("migracao_abc", "Migração de Grupo (inclui resumo e score por cliente)"),
-    ]),
-    ("Relatórios Gerenciais", [
-        ("alto_giro", "Alto Giro"),
-        ("alertas_queda", "Alertas de Queda Consecutiva"),
-        ("erosao_geral", "Erosão de Clientes (Geral)"),
-        ("erosao_clientes", "Erosão de Clientes por Produto"),
-        ("sem_venda", "Sem Venda"),
-        ("poder_compra_clientes", "Poder de Compra por Cliente (3 maiores meses)"),
-        ("produtos_em_alta", "Boletim: Produtos em Alta"),
-        ("produtos_em_queda", "Boletim: Produtos em Queda"),
-        ("clientes_queda_qtd", "Boletim: Clientes em Queda de Quantidade"),
-        ("correlacao_produto_cliente", "Boletim: Correlação Produto x Cliente"),
-        ("impacto_financeiro_churn", "Boletim: Impacto Financeiro do Churn"),
-    ]),
-]
-
-# Nem todo relatório do catálogo tem parâmetro próprio (a maioria usa só os
-# globais de Configurações: base, clientes/produtos, segmentação, período,
-# granularidade). Os poucos que têm formam pequenos grupos N:1 — um mesmo
-# campo (ex.: "Queda mínima em R$ p/ alerta") pode ser compartilhado por MAIS
-# de um relatório do catálogo (evolucao_produtos e alertas_queda usam a mesma
-# tendencia_produtos(); erosao_geral e erosao_clientes usam os mesmos pisos de
-# erosão). Por isso isso é modelado como uma aresta N:1 (gatilhos -> campos),
-# não como "1 relatório = 1 bloco de parâmetro": qualquer um dos gatilhos
-# marcado já habilita o grupo inteiro. "apos" é só a chave do catálogo onde o
-# bloco é desenhado (tem que estar na mesma categoria/coluna que os campos).
-GRUPOS_PARAMETROS_RELATORIO = [
-    {
-        "gatilhos": ("evolucao_produtos", "alertas_queda"),
-        "apos": "alertas_queda",
-        "campos": [
-            ("entrada_periodos_queda", "Períodos mínimos seguidos em queda:", "2", 6),
-            ("entrada_queda_minima_alerta", "Queda mínima em R$ p/ alerta:", "3000", 8),
-            ("entrada_top_n_produtos", "Produtos a exibir (top N por tendência):", "", 6),
-        ],
-        "legenda": "Vale para \"Tendência de Produtos\" e \"Alertas de Queda Consecutiva\".",
-    },
-    {
-        "gatilhos": ("erosao_geral", "erosao_clientes"),
-        "apos": "erosao_geral",
-        "campos": [
-            ("entrada_reducao_minima_erosao", "Redução mínima p/ erosão (%):", "50", 6),
-            ("entrada_queda_minima_erosao", "Queda mínima em R$ p/ erosão:", "3000", 8),
-        ],
-        "legenda": "Vale para \"Erosão de Clientes (Geral)\" e \"Por Produto\".",
-    },
-    {
-        "gatilhos": ("sem_venda",),
-        "apos": "sem_venda",
-        "campos": [
-            ("entrada_reducao_minima_sem_venda", "Redução mínima p/ Sem Venda (%):", "90", 6),
-        ],
-        "legenda": "Sem piso de R$ de propósito — pega também clientes de baixo volume.",
-    },
-    {
-        "gatilhos": ("poder_compra_clientes",),
-        "apos": "poder_compra_clientes",
-        "campos": [
-            ("entrada_top_n_poder_compra", "Máximo de clientes a exibir:", "", 6),
-        ],
-        "legenda": "Maior Poder de Compra primeiro. Vazio = todos os clientes.",
-    },
-]
-
-
-def _preparar_logger():
-    pasta_logs = recursos.pasta_logs()
-    nome_arquivo = f"analise_funil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    caminho_log = os.path.join(pasta_logs, nome_arquivo)
-
-    logger = logging.getLogger("analise_funil_app")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
-    manipulador = logging.FileHandler(caminho_log, encoding="utf-8")
-    manipulador.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    logger.addHandler(manipulador)
-    return logger, caminho_log
-
-
-def _formatar_moeda_br(valor):
-    return "R$ " + f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 class AplicacaoAnaliseFunil(JANELA_BASE):
@@ -2243,7 +2121,8 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._registrar_log(f"Exportando {formato} para: {caminho_saida}")
         try:
             if formato == "Excel":
-                exportar_relatorio_excel(
+                import exportador_excel
+                exportador_excel.exportar_relatorio_excel(
                     caminho_saida, resultados_filtrados, self.relatorios_personalizados,
                     nome_usuario=self.perfil.get("nome", ""), nome_empresa=nome_empresa,
                     descricao_analise=descricoes_geracao,
@@ -2329,463 +2208,6 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
         self._atualizar_boas_vindas()
         self._registrar_log(f"Perfil salvo: nome='{nome}', tamanho_fonte={tamanho_fonte}.")
         messagebox.showinfo("Perfil", "Perfil salvo com sucesso.")
-
-
-# ---------------------------------------------------------------------------
-# Exportação para Excel
-# ---------------------------------------------------------------------------
-
-def _ajustar_largura_colunas(planilha, ignorar_linhas=None):
-    ignorar_linhas = ignorar_linhas or set()
-    for coluna in planilha.columns:
-        maior_comprimento = 0
-        letra_coluna = get_column_letter(coluna[0].column)
-        for celula in coluna:
-            if celula.row in ignorar_linhas:
-                continue
-            valor = str(celula.value) if celula.value is not None else ""
-            maior_comprimento = max(maior_comprimento, len(valor))
-        planilha.column_dimensions[letra_coluna].width = min(maior_comprimento + 2, 45)
-
-
-def _formatar_cabecalho(planilha, linha=1):
-    preenchimento = PatternFill(start_color=COR_CABECALHO, end_color=COR_CABECALHO, fill_type="solid")
-    fonte = Font(color="FFFFFF", bold=True)
-    for celula in planilha[linha]:
-        celula.fill = preenchimento
-        celula.font = fonte
-        celula.alignment = Alignment(horizontal="center")
-
-
-def _escrever_descricao(planilha, descricao, n_colunas):
-    """Linha de descrição (metodologia em 1-2 linhas) acima do cabeçalho da tabela, mesclada por toda a largura."""
-    planilha.append([descricao])
-    planilha.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(n_colunas, 1))
-    celula = planilha.cell(row=1, column=1)
-    celula.font = Font(italic=True, color=COR_CABECALHO)
-    celula.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    planilha.row_dimensions[1].height = 28
-
-
-def _inserir_logo(planilha, coluna_ancora, linha_ancora=1, altura_pixels=34):
-    """Insere a marca da 2D Consultores em miniatura, sem sobrepor os dados."""
-    if ImagemExcel is None or not os.path.exists(CAMINHO_LOGO_ICONE):
-        return
-    try:
-        imagem = ImagemExcel(CAMINHO_LOGO_ICONE)
-        proporcao = imagem.width / imagem.height
-        imagem.height = altura_pixels
-        imagem.width = altura_pixels * proporcao
-        planilha.add_image(imagem, f"{get_column_letter(coluna_ancora)}{linha_ancora}")
-    except Exception:
-        pass  # ausência da logo não deve impedir a geração do relatório
-
-
-def _eh_coluna_percentual(nome_coluna):
-    """
-    Detecta coluna de percentual pelo nome (Percentual_*, *_Pct, "% ..."),
-    sem precisar de uma lista mantida à parte por análise — cobre também as
-    colunas dos Relatórios Personalizados, que o usuário monta livremente.
-    """
-    nome = str(nome_coluna).lower()
-    return "%" in nome or "percentual" in nome or "pct" in nome
-
-
-def _escrever_dataframe(workbook, nome_aba, df, colunas_moeda=None, descricao=None):
-    if nome_aba in workbook.sheetnames:
-        planilha = workbook[nome_aba]
-    else:
-        planilha = workbook.create_sheet(nome_aba)
-
-    colunas_moeda = colunas_moeda or []
-    df_para_exportar = df.reset_index() if df.index.name or isinstance(df.index, pd.MultiIndex) else df
-    colunas_percentual = [c for c in df_para_exportar.columns if _eh_coluna_percentual(c)]
-
-    if descricao:
-        _escrever_descricao(planilha, descricao, len(df_para_exportar.columns))
-    linha_cabecalho = planilha.max_row + 1
-
-    planilha.append(list(map(str, df_para_exportar.columns)))
-    for _, linha in df_para_exportar.iterrows():
-        valores = list(linha)
-        # O motor de análise guarda percentual como número "cru" (8.3 = 8,3%).
-        # O formato nativo de % do Excel multiplica por 100 na exibição, então
-        # o valor gravado precisa ser a fração (0.083) — sem isso, a célula
-        # mostra "830%" em vez de "8,30%" quando formatada como percentual.
-        for indice, nome_coluna in enumerate(df_para_exportar.columns):
-            if nome_coluna in colunas_percentual and pd.notnull(valores[indice]):
-                valores[indice] = valores[indice] / 100
-        planilha.append(valores)
-
-    for indice_coluna, nome_coluna in enumerate(df_para_exportar.columns, start=1):
-        if nome_coluna in colunas_moeda:
-            for linha in range(linha_cabecalho + 1, planilha.max_row + 1):
-                planilha.cell(row=linha, column=indice_coluna).number_format = 'R$ #,##0.00'
-        elif nome_coluna in colunas_percentual:
-            for linha in range(linha_cabecalho + 1, planilha.max_row + 1):
-                planilha.cell(row=linha, column=indice_coluna).number_format = '0.00%'
-
-    _formatar_cabecalho(planilha, linha=linha_cabecalho)
-    _ajustar_largura_colunas(planilha, ignorar_linhas={1} if descricao else None)
-    _inserir_logo(planilha, coluna_ancora=len(df_para_exportar.columns) + 2)
-    return planilha
-
-
-def _criar_capa(workbook, resultados_analise, nome_usuario="", nome_empresa=""):
-    """Primeira aba do relatório: logo, identidade da empresa e sumário do que foi gerado."""
-    capa = workbook.create_sheet("Capa", 0)
-    capa.sheet_view.showGridLines = False
-    capa.column_dimensions["A"].width = 4
-    capa.column_dimensions["B"].width = 60
-
-    if os.path.exists(CAMINHO_LOGO) and ImagemExcel is not None:
-        try:
-            imagem = ImagemExcel(CAMINHO_LOGO)
-            proporcao = imagem.width / imagem.height
-            imagem.height = 130
-            imagem.width = 130 * proporcao
-            capa.add_image(imagem, "B2")
-        except Exception:
-            pass
-
-    capa["B10"] = NOME_SISTEMA
-    capa["B10"].font = Font(size=20, bold=True, color=COR_CABECALHO)
-    capa["B11"] = NOME_EMPRESA
-    capa["B11"].font = Font(size=12, color="666666")
-
-    linha_info = 13
-    if nome_empresa:
-        capa[f"B{linha_info}"] = f"Empresa analisada: {nome_empresa}"
-        capa[f"B{linha_info}"].font = Font(size=13, bold=True, color=COR_CABECALHO)
-        linha_info += 1
-    if nome_usuario:
-        capa[f"B{linha_info}"] = f"Gerado por: {nome_usuario}"
-        capa[f"B{linha_info}"].font = Font(size=10, italic=True, color="666666")
-        linha_info += 1
-    capa[f"B{linha_info}"] = f"Relatório gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}"
-    capa[f"B{linha_info}"].font = Font(size=10, italic=True, color="666666")
-
-    linha = linha_info + 3
-    capa[f"B{linha}"] = "Granularidades incluídas neste relatório:"
-    capa[f"B{linha}"].font = Font(bold=True)
-    for granularidade in resultados_analise.keys():
-        linha += 1
-        capa[f"B{linha}"] = f"•  {granularidade}"
-    return capa
-
-
-NOMES_ANALISE = {
-    "top_produtos": "Top_Produtos",
-    "poder_compra_clientes": "Poder_Compra_Clientes",
-    "evolucao_produtos": "Evolucao_Produtos",
-    "alto_giro": "Alto_Giro",
-    "alertas_queda": "Alertas_Queda",
-    "erosao_geral": "Erosao_Geral",
-    "erosao_clientes": "Erosao_Clientes",
-    "sem_venda": "Sem_Venda",
-    "abc": "ABC_Clientes",
-    "abc_produtos": "ABC_Produtos",
-    "migracao_abc": "Migracao_ABC",
-    "migracao_resumo": "Migracao_Resumo",
-    "migracao_score_clientes": "Migracao_Score_Clientes",
-    "produtos_em_alta": "Produtos_Em_Alta",
-    "produtos_em_queda": "Produtos_Em_Queda",
-    "clientes_queda_qtd": "Clientes_Queda_Qtd",
-    "correlacao_produto_cliente": "Correlacao_Prod_Cliente",
-    "impacto_financeiro_churn": "Impacto_Financeiro_Churn",
-}
-
-# Título de seção em PDF/Word: diferente de NOMES_ANALISE (nome de aba do
-# Excel — sem acento, com "_" — restrição de caracteres de aba, não de
-# leitura), aqui é o mesmo texto descritivo que o usuário já vê nos
-# checkboxes do catálogo (Relatório Padrão) e no combo do Visualizar
-# Relatório. Antes, PDF/Word usavam NOMES_ANALISE.replace("_", " ") e
-# mostravam títulos tipo "Erosao Geral"/"Migracao ABC" — sem acento e sem a
-# descrição completa, uma inconsistência visível num documento pra cliente.
-ROTULOS_RELATORIO_PDF_WORD = {
-    chave: titulo for _categoria, itens in CATALOGO_RELATORIOS for chave, titulo in itens
-}
-ROTULOS_RELATORIO_PDF_WORD.update({
-    "migracao_resumo": "Migração de Grupo — Resumo",
-    "migracao_score_clientes": "Migração de Grupo — Score por Cliente",
-})
-
-# Descrição curta (metodologia em 1-2 linhas) de cada relatório — único
-# lugar mantido, reaproveitado pelos três exportadores (Excel/PDF/Word) pra
-# não desalinhar entre formatos conforme a lógica muda.
-DESCRICAO_ANALISE = {
-    "top_produtos": "Top 20 produtos por receita, somando toda a base carregada — não varia por granularidade.",
-    "poder_compra_clientes": "Capacidade de compra de cada cliente no seu melhor momento: média dos 3 meses-calendário de maior receita, não a média corrida (descarta antes picos isolados/atípicos). '% de Variação vs. Potencial' é a diferença percentual do desempenho recente frente a esse potencial (0% = comprando exatamente o potencial, negativo = abaixo, positivo = acima). 'Meses Muito Abaixo do Potencial' conta, dos últimos 3 meses, quantos tiveram receita com queda de 60% ou mais frente a esse potencial.",
-    "evolucao_produtos": "Receita e quantidade por produto ao longo do tempo, ordenado pela tendência (média dos últimos 3 períodos vs. dos 3 primeiros).",
-    "alto_giro": "Status do mês mais recente de cada produto de alto giro: receita e status (alta/queda) considerando só clientes do Grupo 1; Cliente Destaque/Cliente em Queda são quem mais cresceu e quem mais caiu em % de compra do produto (não quem tem maior faturamento), de todos os grupos, priorizando Grupo 1 > 2 > 3 > demais (nunca o mesmo cliente nos dois papéis). Some/entra sozinho conforme os produtos considerados mudam.",
-    "alertas_queda": "Produtos com queda de receita que persiste até o período mais recente — não um histórico antigo já recuperado. Ordenado pelo maior impacto financeiro (Queda em R$).",
-    "erosao_geral": "Clientes cuja receita total (somando todos os produtos) caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
-    "erosao_clientes": "Clientes cuja compra de um produto caiu 50%+ (ou zerou) em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece.",
-    "sem_venda": "Clientes que já compraram alguma vez, mas praticamente pararam — receita do mês mais recente caiu 90%+ frente ao pico histórico. Sem piso de R$ de propósito (diferente de Erosão de Clientes): pega também clientes de baixo volume. Uma coluna de receita por mês disponível na base, para ver a trajetória completa (comprava, parou), não só pico x atual.",
-    "abc": "Segmentação de clientes por receita em faixas (Grupo 1/2/3/Demais), com os 5 clientes de maior receita por faixa e período.",
-    "abc_produtos": "Segmentação de produtos por representatividade de receita (Grupo 1 = top X% da receita).",
-    "migracao_abc": "Clientes que subiram ou desceram de faixa entre períodos consecutivos, com causa provável quando identificável com folga.",
-    "migracao_resumo": "Quantidade de clientes que subiram vs. desceram de faixa, por transição de período. Margem = Qtd_Subiu - Qtd_Desceu.",
-    "migracao_score_clientes": "Placar acumulado por cliente em todo o histórico de migrações entre faixas (+2 por subida, -3 por queda). Grupo = faixa ABC do cliente no período mais recente.",
-    "produtos_em_alta": "Top 10 produtos com maior alta de receita entre os dois períodos mais recentes.",
-    "produtos_em_queda": "Top 10 produtos com maior queda de receita entre os dois períodos mais recentes.",
-    "clientes_queda_qtd": "Clientes com maior queda de quantidade comprada entre os dois períodos mais recentes.",
-    "correlacao_produto_cliente": "Eventos de erosão classificados por padrão: abandono de categoria, fim de ciclo ou ruptura estratégica.",
-    "impacto_financeiro_churn": "KPIs agregados do impacto financeiro da erosão de clientes: maior retração individual, receita total sob risco e variação global de receita.",
-}
-
-
-def _construir_descricoes_dinamicas(parametros):
-    """
-    Cópia de DESCRICAO_ANALISE com as entradas de erosao_geral/erosao_clientes/
-    alertas_queda reescritas com os valores REALMENTE configurados nesta
-    geração (redução mínima %, queda mínima em R$, períodos consecutivos) —
-    a versão estática sempre dizia "caiu 50%+" mesmo quando o usuário
-    configurava um valor diferente (ex.: 80%), dando a falsa impressão de que
-    o filtro não tinha efeito algum no relatório exportado.
-    """
-    descricoes = dict(DESCRICAO_ANALISE)
-    reducao = parametros.get("reducao_minima_erosao", 50.0)
-    queda_r_erosao = parametros.get("queda_minima_erosao", 0.0)
-    piso_erosao = f" e queda de pelo menos {_formatar_moeda_br(queda_r_erosao)}" if queda_r_erosao > 0 else ""
-    descricoes["erosao_geral"] = (
-        f"Clientes cuja receita total (somando todos os produtos) caiu {reducao:.0f}%+ (ou zerou){piso_erosao} "
-        "em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece."
-    )
-    descricoes["erosao_clientes"] = (
-        f"Clientes cuja compra de um produto caiu {reducao:.0f}%+ (ou zerou){piso_erosao} "
-        "em relação ao pico histórico, até o último mês — quem já voltou a comprar no ritmo de antes não aparece."
-    )
-
-    periodos_queda = parametros.get("periodos_queda", 2)
-    queda_r_alerta = parametros.get("queda_minima_alerta", 0.0)
-    piso_alerta = f", com queda de pelo menos {_formatar_moeda_br(queda_r_alerta)}" if queda_r_alerta > 0 else ""
-    descricoes["alertas_queda"] = (
-        f"Produtos com queda de receita em {periodos_queda}+ períodos consecutivos que persiste até o período "
-        f"mais recente{piso_alerta} — não um histórico antigo já recuperado. Ordenado pelo maior impacto "
-        "financeiro (Queda em R$)."
-    )
-
-    reducao_sem_venda = parametros.get("reducao_minima_sem_venda", 90.0)
-    descricoes["sem_venda"] = (
-        f"Clientes que já compraram alguma vez, mas praticamente pararam — receita do mês mais recente caiu "
-        f"{reducao_sem_venda:.0f}%+ frente ao pico histórico (sobrou no máximo {100 - reducao_sem_venda:.0f}% do "
-        "que já compraram no auge). Sem piso de R$ de propósito: pega também clientes de baixo volume. Uma "
-        "coluna de receita por mês disponível na base, para ver a trajetória completa, não só pico x atual."
-    )
-    return descricoes
-
-COLUNAS_MOEDA_POR_ANALISE = {
-    "top_produtos": ["Receita"],
-    "poder_compra_clientes": ["Poder_De_Compra", "Receita Média Recente (3 meses)"],
-    "evolucao_produtos": ["Receita", "Receita_Periodo_Anterior"],
-    "alto_giro": ["Receita Atual"],
-    "alertas_queda": ["Receita Atual", "Receita Precedente à Queda", "Queda em R$"],
-    "erosao_geral": ["Receita no Pico", "Receita Atual", "Queda em R$"],
-    "erosao_clientes": ["Receita no Pico", "Receita Atual", "Queda em R$"],
-    # "sem_venda" tem uma coluna de receita por mês disponível na base —
-    # nomes dinâmicos (ex.: "ago/25"), não dá pra listar aqui de antemão.
-    # Ver _colunas_moeda_efetivas: computado a partir do próprio DataFrame
-    # na hora de exportar (tudo que não for Cliente/Grupo é moeda).
-    "sem_venda": [],
-    "abc": ["Receita", "Renuncia", "Renuncia_Acumulada"],
-    "abc_produtos": ["Receita", "Renuncia", "Renuncia_Acumulada"],
-    "migracao_abc": [],
-    "migracao_resumo": [],
-    "migracao_score_clientes": [],
-    "produtos_em_alta": ["Receita_Periodo_Anterior", "Receita_Periodo_Atual", "Total_Ano_Atual"],
-    "produtos_em_queda": ["Receita_Periodo_Anterior", "Receita_Periodo_Atual", "Total_Ano_Atual"],
-    "clientes_queda_qtd": ["Perda_Receita"],
-    "correlacao_produto_cliente": ["Reducao_Receita"],
-    "impacto_financeiro_churn": ["Receita_Sob_Risco"],
-}
-
-
-def _colunas_moeda_efetivas(chave_analise, df_analise):
-    """
-    Lista de colunas monetárias pra formatar, resolvendo o caso especial de
-    "sem_venda": as colunas são uma por mês disponível na base (nomes
-    dinâmicos, ex. "ago/25"), impossível listar de antemão em
-    COLUNAS_MOEDA_POR_ANALISE — aqui todas as colunas exceto Cliente/Grupo
-    são receita, então tudo que sobra é moeda.
-    """
-    if chave_analise == "sem_venda":
-        return [c for c in df_analise.columns if c not in ("Cliente", "Grupo")]
-    return COLUNAS_MOEDA_POR_ANALISE.get(chave_analise)
-
-
-def exportar_relatorio_excel(caminho_saida, resultados_analise, relatorios_personalizados=None, nome_usuario="", nome_empresa="", descricao_analise=None):
-    """
-    Gera o arquivo .xlsx com uma aba por (análise x granularidade), formatado
-    com cabeçalhos destacados, moeda BRL, largura de coluna automática e a
-    logo da empresa em cada aba (mais uma capa de apresentação).
-
-    descricao_analise: dict chave->texto pra sobrepor DESCRICAO_ANALISE (ver
-    _construir_descricoes_dinamicas) — usa os valores padrão se None.
-    """
-    descricoes = descricao_analise if descricao_analise is not None else DESCRICAO_ANALISE
-    workbook = Workbook()
-    workbook.remove(workbook.active)  # remove a aba padrão vazia
-    _criar_capa(workbook, resultados_analise, nome_usuario, nome_empresa)
-
-    for granularidade, analises in resultados_analise.items():
-        for chave_analise, df_analise in analises.items():
-            nome_base = NOMES_ANALISE.get(chave_analise, chave_analise)
-            nome_aba = f"{nome_base}_{granularidade}"[:31]  # limite do Excel
-            if df_analise is None or df_analise.empty:
-                planilha = workbook.create_sheet(nome_aba)
-                planilha.append(["Sem dados para esta análise/granularidade."])
-                continue
-            _escrever_dataframe(
-                workbook, nome_aba, df_analise, _colunas_moeda_efetivas(chave_analise, df_analise),
-                descricao=descricoes.get(chave_analise),
-            )
-
-    if relatorios_personalizados:
-        for nome_relatorio, tabela in relatorios_personalizados.items():
-            nome_aba = f"Custom_{nome_relatorio}"[:31]
-            _escrever_dataframe(workbook, nome_aba, tabela)
-
-    if len(workbook.sheetnames) <= 1:
-        workbook.create_sheet("Sem_Dados")
-
-    workbook.save(caminho_saida)
-
-
-def _pedir_permissao_primeira_execucao():
-    """
-    Na primeira vez que o programa roda nesta pasta (nem 'dados_locais' nem
-    'logs' existem ainda ao lado do executável), pergunta ao usuário se pode
-    criar essas pastas — perfil, configurações salvas e logs de execução.
-    Se recusar, tudo isso vai para uma pasta temporária do Windows nesta
-    sessão em vez de ficar ao lado do executável/script.
-    """
-    if recursos.pasta_dados_locais_ja_existe():
-        return
-    raiz_temporaria = tk.Tk()
-    raiz_temporaria.withdraw()
-    permitido = messagebox.askyesno(
-        f"Primeira execução — {NOME_SISTEMA}",
-        f"Esta é a primeira vez que o {NOME_SISTEMA} roda nesta pasta.\n\n"
-        "Para funcionar, ele precisa criar, ao lado do programa:\n\n"
-        "  •  uma pasta \"dados_locais\" — perfil do usuário e configurações salvas\n"
-        "  •  uma pasta \"logs\" — registro de execução, para diagnóstico\n\n"
-        "Nenhum dado sai desta máquina.\n\n"
-        "Permitir a criação dessas pastas aqui?",
-        icon="question",
-    )
-    raiz_temporaria.destroy()
-    recursos.definir_permissao_dados_locais(permitido)
-
-
-# Porta fixa, só localhost — dá bind nela funciona como trava de "instância
-# única" (só um processo consegue reservar a mesma porta ao mesmo tempo) e
-# dobra de canal de aviso pra outra instância (ver _enviar_comando_instancia_
-# existente): mais simples que mutex nomeado via ctypes e não pede nenhuma
-# biblioteca nova (pywin32, etc). Motivo de existir: com mais de uma janela
-# do programa aberta, o arquivo do executável fica travado e a auto-
-# atualização nunca consegue trocar o arquivo (reproduzido e confirmado —
-# via logs, um Monitor2D_novo.exe baixado ficava órfão em %TEMP%, o script
-# de troca esgotava as 90 tentativas e desistia, sempre, porque uma segunda
-# janela ainda estava aberta e continuava travando o arquivo).
-PORTA_INSTANCIA_UNICA = 51837
-
-
-def _tentar_registrar_instancia_unica():
-    """
-    Socket TCP escutando em localhost, se essa for a primeira instância
-    (bind bem-sucedido). None se a porta já está em uso por outra — ou
-    seja, já tem uma instância do programa rodando.
-    """
-    servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        servidor.bind(("127.0.0.1", PORTA_INSTANCIA_UNICA))
-    except OSError:
-        servidor.close()
-        return None
-    servidor.listen(1)
-    return servidor
-
-
-def _enviar_comando_instancia_existente(comando, timeout=2):
-    """Manda um comando curto ("ATIVAR"/"FECHAR") pra instância já aberta. True se entregou."""
-    try:
-        with socket.create_connection(("127.0.0.1", PORTA_INSTANCIA_UNICA), timeout=timeout) as cliente:
-            cliente.sendall(comando.encode("utf-8"))
-        return True
-    except OSError:
-        return False
-
-
-def _perguntar_instancia_ja_aberta():
-    """
-    Diálogo mostrado ANTES da janela principal existir — outra instância do
-    programa já está rodando, e o usuário decide o que fazer (mesmo padrão
-    de raiz temporária de _pedir_permissao_primeira_execucao). Retorna
-    "prosseguir", "fechar" ou "cancelar".
-    """
-    raiz_temporaria = tk.Tk()
-    raiz_temporaria.withdraw()
-    resultado = {"escolha": "cancelar"}
-
-    janela = tk.Toplevel(raiz_temporaria)
-    janela.title(NOME_SISTEMA)
-    janela.resizable(False, False)
-    janela.grab_set()
-
-    tk.Label(
-        janela, text=f"O {NOME_SISTEMA} já está aberto em outra janela.",
-        font=("Segoe UI", 10, "bold"),
-    ).pack(padx=24, pady=(22, 4))
-    tk.Label(
-        janela,
-        text="Enquanto houver mais de uma instância aberta, a atualização automática\n"
-             "não consegue trocar o arquivo do programa.",
-        font=("Segoe UI", 9), fg="gray", justify="center",
-    ).pack(padx=24, pady=(0, 18))
-
-    def _escolher(valor):
-        resultado["escolha"] = valor
-        janela.destroy()
-
-    linha_botoes = tk.Frame(janela)
-    linha_botoes.pack(pady=(0, 22), padx=24)
-    tk.Button(
-        linha_botoes, text="Ir para a instância aberta", width=24, command=lambda: _escolher("prosseguir"),
-    ).pack(side="left", padx=6)
-    tk.Button(
-        linha_botoes, text="Fechar a instância aberta", width=24, command=lambda: _escolher("fechar"),
-    ).pack(side="left", padx=6)
-
-    janela.protocol("WM_DELETE_WINDOW", lambda: _escolher("cancelar"))
-    janela.update_idletasks()
-    x = (janela.winfo_screenwidth() - janela.winfo_reqwidth()) // 2
-    y = (janela.winfo_screenheight() - janela.winfo_reqheight()) // 2
-    janela.geometry(f"+{x}+{y}")
-
-    raiz_temporaria.wait_window(janela)
-    raiz_temporaria.destroy()
-    return resultado["escolha"]
-
-
-def _declarar_dpi_aware():
-    """
-    Sem isso, o Windows não sabe que o programa lida com a escala de tela
-    (DPI) sozinho e "finge" que a janela está em 100%, esticando o bitmap
-    já renderizado (com ClearType) para a escala real (125%/150%/etc) —
-    é isso que produz texto/botões com aparência fragmentada e franjas de
-    cor. Precisa ser chamado ANTES de qualquer janela Tk ser criada.
-    """
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor V2
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":

@@ -1554,6 +1554,122 @@ def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
     return resultado
 
 
+def mobilidade_carteira(df, granularidade="Mensal", clientes_excluidos=None, cortes=(30.0, 50.0, 60.0),
+                         desconsiderar_balcao=False, meses_permanencia_alerta=3):
+    """
+    Boletim executivo de mobilidade — quem subiu, desceu ou ficou estável de
+    faixa na transição mais recente (não o histórico acumulado inteiro).
+    Reaproveita migracao_abc() (hierarquia de faixas com a guarda de Balcão)
+    e pontuacao_migracao_clientes() (Meses_No_Grupo_Atual) em vez de
+    recalcular a mesma lógica — uma fonte de verdade só, a mesma da aba de
+    Migração.
+
+    Diferente do Score de pontuacao_migracao_clientes (somado desde o início
+    do histórico), "ascensao"/"recuando" aqui usam sempre a ÚLTIMA transição
+    de período disponível: um cliente que caiu de faixa há 6 meses mas está
+    estável desde então não deve aparecer como "recuando" hoje — score
+    histórico negativo não é risco atual (bug identificado num relatório
+    anterior que misturava os dois e citava clientes estáveis como "risco
+    alto").
+
+    "Demais" não é uma faixa que importa monitorar por si só (não é
+    carteira relevante) — só entram clientes com alguma faixa (anterior OU
+    atual) em Grupo 1/2/3. Cair de Grupo 1 pra Demais é o caso mais grave de
+    "recuando" (perde-se um cliente relevante), não um caso a ignorar por
+    "ter caído pra Demais".
+
+    Retorna dict com 4 DataFrames:
+      - "ascensao": subiu de faixa na última transição, faixa atual em
+        Grupo 1/2/3. "Chegou_Ao_G1_Agora" = True quando a faixa atual é
+        Grupo 1 (o destaque mais forte de crescimento).
+      - "recuando": desceu de faixa na última transição, faixa anterior em
+        Grupo 1/2/3. "Risco_Alto" = True quando saiu do Grupo 1 (perdeu o
+        cliente mais valioso da carteira, prioridade de contato).
+      - "estaveis": sem mudança de faixa na última transição, faixa atual
+        em Grupo 1/2/3 (migracao_abc não inclui quem não mudou de faixa —
+        calculado aqui direto contra as duas faixas do período).
+      - "atencao_permanencia": clientes com Meses_No_Grupo_Atual >=
+        meses_permanencia_alerta numa faixa intermediária (Grupo 2/3, não
+        o topo) — presos, candidatos a um plano de conta pra subir, não uma
+        queda recente.
+    """
+    vazio_mov = pd.DataFrame(columns=["Cliente", "Faixa_Anterior", "Faixa_Atual"])
+    vazio_permanencia = pd.DataFrame(columns=["Cliente", "Faixa_Atual", "Meses_No_Grupo_Atual"])
+    if len(cortes) < 1:
+        return {"ascensao": vazio_mov, "recuando": vazio_mov, "estaveis": vazio_mov,
+                "atencao_permanencia": vazio_permanencia}
+
+    abc_df = classificar_faixas(
+        df, granularidade, campo="Cliente", excluidos=clientes_excluidos,
+        cortes=cortes, desconsiderar_balcao=desconsiderar_balcao,
+    )
+    if abc_df.empty:
+        return {"ascensao": vazio_mov, "recuando": vazio_mov, "estaveis": vazio_mov,
+                "atencao_permanencia": vazio_permanencia}
+
+    periodos_ordenados = _ordenar_periodos(abc_df["Periodo"].unique(), granularidade)
+    if len(periodos_ordenados) < 2:
+        return {"ascensao": vazio_mov, "recuando": vazio_mov, "estaveis": vazio_mov,
+                "atencao_permanencia": vazio_permanencia}
+    periodo_anterior, periodo_atual = periodos_ordenados[-2], periodos_ordenados[-1]
+
+    nomes_grupos = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais"]
+    faixas_relevantes = set(nomes_grupos[:-1])  # Grupo 1/2/3 — sem "Demais"
+    faixas_intermediarias = set(nomes_grupos[1:-1])  # Grupo 2/3 — sem Grupo 1 nem Demais
+
+    migracao_df = migracao_abc(df, abc_df, granularidade)
+    ultima_transicao = migracao_df[
+        (migracao_df["Periodo_Anterior"] == periodo_anterior) & (migracao_df["Periodo_Atual"] == periodo_atual)
+    ]
+
+    ascensao = ultima_transicao[
+        (ultima_transicao["Direcao"] == "Subiu") & ultima_transicao["Faixa_Atual"].isin(faixas_relevantes)
+    ][["Cliente", "Faixa_Anterior", "Faixa_Atual"]].copy()
+    ascensao["Chegou_Ao_G1_Agora"] = ascensao["Faixa_Atual"].eq("Grupo 1")
+    ascensao.sort_values(["Chegou_Ao_G1_Agora", "Cliente"], ascending=[False, True], inplace=True)
+    ascensao.reset_index(drop=True, inplace=True)
+
+    recuando = ultima_transicao[
+        (ultima_transicao["Direcao"] == "Desceu") & ultima_transicao["Faixa_Anterior"].isin(faixas_relevantes)
+    ][["Cliente", "Faixa_Anterior", "Faixa_Atual"]].copy()
+    recuando["Risco_Alto"] = recuando["Faixa_Anterior"].eq("Grupo 1")
+    recuando.sort_values(["Risco_Alto", "Cliente"], ascending=[False, True], inplace=True)
+    recuando.reset_index(drop=True, inplace=True)
+
+    # "Estáveis" não aparece em migracao_abc por design (só lista quem
+    # mudou) — calculado direto contra as duas faixas do período, com a
+    # mesma guarda de Balcão (nunca conta como "estável" relevante).
+    faixa_anterior_map = abc_df[abc_df["Periodo"] == periodo_anterior].set_index("Cliente")["Faixa_ABC"]
+    faixa_atual_map = abc_df[abc_df["Periodo"] == periodo_atual].set_index("Cliente")["Faixa_ABC"]
+    clientes_comuns = faixa_anterior_map.index.intersection(faixa_atual_map.index)
+    estaveis = pd.DataFrame({
+        "Cliente": clientes_comuns,
+        "Faixa_Anterior": faixa_anterior_map[clientes_comuns].values,
+        "Faixa_Atual": faixa_atual_map[clientes_comuns].values,
+    })
+    estaveis = estaveis[
+        (estaveis["Faixa_Anterior"] == estaveis["Faixa_Atual"]) & estaveis["Faixa_Atual"].isin(faixas_relevantes)
+    ].copy()
+    estaveis.sort_values("Cliente", inplace=True)
+    estaveis.reset_index(drop=True, inplace=True)
+
+    # Presos numa faixa intermediária há muito tempo: reaproveita Meses_No_
+    # Grupo_Atual/Grupo de pontuacao_migracao_clientes — mesma fonte de
+    # verdade da aba de Migração, sem recalcular a mesma lógica duas vezes.
+    pontuacao = pontuacao_migracao_clientes(migracao_df, abc_df, granularidade)
+    atencao_permanencia = pontuacao[
+        (pontuacao["Meses_No_Grupo_Atual"] >= meses_permanencia_alerta)
+        & (pontuacao["Grupo"].isin(faixas_intermediarias))
+    ][["Cliente", "Grupo", "Meses_No_Grupo_Atual"]].rename(columns={"Grupo": "Faixa_Atual"})
+    atencao_permanencia.sort_values("Meses_No_Grupo_Atual", ascending=False, inplace=True)
+    atencao_permanencia.reset_index(drop=True, inplace=True)
+
+    return {
+        "ascensao": ascensao, "recuando": recuando, "estaveis": estaveis,
+        "atencao_permanencia": atencao_permanencia,
+    }
+
+
 def _preparar_contexto_causa_provavel(df, col_periodo):
     """
     Pré-calcula, uma única vez para todo o DataFrame, os agregados por

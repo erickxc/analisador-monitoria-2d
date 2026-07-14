@@ -30,6 +30,7 @@ from recursos import REPOSITORIO_GITHUB, VERSAO_ATUAL
 TIMEOUT_SEGUNDOS = 4
 TIMEOUT_DOWNLOAD_SEGUNDOS = 30
 NOME_EXE_TEMPORARIO = "Monitor2D_novo.exe"
+NOME_STATUS_ATUALIZACAO = "atualizar_analisador_status.txt"
 
 
 def _versao_para_tupla(versao):
@@ -147,21 +148,39 @@ def aplicar_atualizacao(caminho_novo_exe):
 
     caminho_atual = sys.executable
     caminho_bat = os.path.join(os.environ.get("TEMP", "."), "atualizar_analisador.bat")
+    caminho_status = os.path.join(os.environ.get("TEMP", "."), NOME_STATUS_ATUALIZACAO)
+    caminho_status_log = caminho_status + ".log"
     # 90 tentativas x ~1s (ping -n 2) = ~90s de espera. 20 tentativas (~20s) não
     # é suficiente quando o executável está numa pasta sincronizada por OneDrive
     # (ou sendo escaneado por antivírus) — o move falhava sempre, o .bat desistia
     # e se autodeletava, deixando o .exe baixado órfão em %TEMP% sem nunca
     # substituir o atual (reproduzido e confirmado na prática).
+    #
+    # O sucesso é decidido pelo ERRORLEVEL do próprio "move", não mais por
+    # "o arquivo baixado ainda existe": se o antivírus apagar/colocar em
+    # quarentena o .exe baixado ANTES do move rodar, o arquivo desaparece sem
+    # nunca ter substituído o atual — com a checagem antiga isso era
+    # confundido com sucesso (script se autodeletava calado, versão nunca
+    # trocava, e não sobrava nenhum rastro do motivo). Agora o resultado
+    # (OK/FALHA) e a mensagem real do Windows são gravados em arquivos que
+    # verificar_status_ultima_atualizacao() lê na próxima abertura do
+    # programa, pra parar de ser uma falha silenciosa.
     conteudo_bat = f"""@echo off
+chcp 65001 >nul
 setlocal
 set tentativas=0
 :esperar
 set /a tentativas+=1
 ping -n 2 127.0.0.1 >nul
-move /y "{caminho_novo_exe}" "{caminho_atual}" >nul 2>&1
-if exist "{caminho_novo_exe}" (
-    if %tentativas% lss 90 goto esperar
+move /y "{caminho_novo_exe}" "{caminho_atual}" >"{caminho_status_log}" 2>&1
+if not errorlevel 1 (
+    echo OK> "{caminho_status}"
+    del "{caminho_status_log}" >nul 2>&1
+    del "%~f0"
+    exit /b
 )
+if %tentativas% lss 90 goto esperar
+echo FALHA> "{caminho_status}"
 del "%~f0"
 """
     with open(caminho_bat, "w", encoding="utf-8") as arquivo:
@@ -178,3 +197,37 @@ del "%~f0"
         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
         close_fds=True,
     )
+
+
+def verificar_status_ultima_atualizacao():
+    """
+    Verifica se a troca de arquivo agendada por aplicar_atualizacao() (na
+    execução anterior, antes do programa fechar) terminou em sucesso ou
+    falha — chamar no início da inicialização, antes de qualquer outra
+    checagem de atualização.
+
+    Retorna None se não havia nenhuma troca pendente/registrada, ou
+    (sucesso: bool, detalhe: str) — detalhe é a saída real do comando
+    "move" do Windows (ex.: "Acesso negado" quando um antivírus/OneDrive
+    ainda segura o arquivo, ou "Não é possível encontrar o arquivo
+    especificado" quando o .exe baixado sumiu de %TEMP% antes da troca —
+    por exemplo, colocado em quarentena por um antivírus), vazio se não
+    houver nada capturado. Sempre apaga os arquivos de status ao ler, pra
+    não reportar o mesmo resultado de novo na próxima abertura.
+    """
+    caminho_status = os.path.join(os.environ.get("TEMP", "."), NOME_STATUS_ATUALIZACAO)
+    if not os.path.exists(caminho_status):
+        return None
+
+    with open(caminho_status, encoding="utf-8", errors="replace") as arquivo:
+        sucesso = arquivo.read().strip() == "OK"
+    os.remove(caminho_status)
+
+    caminho_status_log = caminho_status + ".log"
+    detalhe = ""
+    if os.path.exists(caminho_status_log):
+        with open(caminho_status_log, encoding="utf-8", errors="replace") as arquivo:
+            detalhe = arquivo.read().strip()
+        os.remove(caminho_status_log)
+
+    return sucesso, detalhe

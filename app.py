@@ -124,6 +124,7 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
 
         self.logger, self.caminho_log = _preparar_logger()
         self.logger.info("Aplicação iniciada.")
+        self._verificar_status_ultima_atualizacao()
 
         self.perfil = perfil.carregar_perfil()
 
@@ -1499,6 +1500,36 @@ class AplicacaoAnaliseFunil(JANELA_BASE):
             # já reagendou o próprio after) — daí o cancel funciona de
             # verdade, contra um agendamento genuinamente pendente.
             self.after(0, self._ao_fechar_janela)
+
+    def _verificar_status_ultima_atualizacao(self):
+        # Lê o resultado de uma troca de arquivo agendada na execução
+        # anterior (ver aplicar_atualizacao/verificar_status_ultima_
+        # atualizacao em atualizacoes.py) — sem isso, uma falha na troca
+        # (ex.: antivírus apagando o .exe baixado antes do "move" rodar)
+        # era completamente silenciosa: o usuário reabria e via a mesma
+        # versão de sempre, sem nenhuma pista do motivo.
+        try:
+            resultado = atualizacoes.verificar_status_ultima_atualizacao()
+        except Exception as exc:
+            self.logger.error(f"Falha ao verificar status da última atualização: {exc}")
+            return
+        if resultado is None:
+            return
+        sucesso, detalhe = resultado
+        if sucesso:
+            self._registrar_log("Atualização instalada com sucesso na abertura anterior.")
+            return
+        mensagem_detalhe = f"\n\nDetalhe técnico: {detalhe}" if detalhe else ""
+        self._registrar_log(f"Falha ao concluir a troca do executável na última atualização.{mensagem_detalhe}", nivel="error")
+        messagebox.showwarning(
+            "Atualização não concluída",
+            "A última tentativa de atualização automática baixou o arquivo, mas não "
+            "conseguiu substituir o programa atual (o antivírus pode ter bloqueado ou "
+            "removido o arquivo baixado antes da troca).\n\n"
+            f"Você continua na versão {VERSAO_ATUAL}. Baixe manualmente pela página de "
+            f"releases no GitHub, ou tente atualizar de novo pelo menu Arquivo."
+            f"{mensagem_detalhe}",
+        )
 
     def _verificar_atualizacoes(self, manual=False):
         # Roda em thread separada (chamada de rede) — nunca deve travar a

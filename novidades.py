@@ -115,4 +115,7 @@ NOVIDADES_POR_VERSAO = {
         "Corrige a atualização automática que baixava mas nunca terminava de instalar: quando a conexão caía no meio do download (rede instável, proxy ou antivírus), o arquivo incompleto era instalado por cima do programa atual, corrompendo-o. Agora o download é validado antes de instalar.",
         "Novo estilo 'Linha (%)' no gráfico 'Evolução no Tempo': participação de mercado por fabricante/produto/cliente ao longo do tempo, com 'Outros' agrupando quem fica fora do Top N.",
     ],
+    "1.6.21": [
+        "Corrige a classificação de Grupo (1/2/3/Demais) no relatório ABC e na Migração de Grupo: agora considera a receita acumulada do cliente/produto até aquele período (mesmo critério já usado em Poder de Compra/Alto Giro), não mais só a receita daquele mês isolado — um mês fraco pontual deixa de tirar do Grupo 1 quem tem histórico grande.",
+    ],
 }

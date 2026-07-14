@@ -1394,7 +1394,15 @@ def migracao_abc(df, abc_df, granularidade="Mensal"):
     col_periodo = COLUNA_PERIODO[granularidade]
     periodos_ordenados = _ordenar_periodos(abc_df["Periodo"].unique(), granularidade)
 
-    faixas_em_ordem = [f for f in abc_df["Faixa_ABC"].unique() if f != "Demais"]
+    # "Balcão" nunca entra nessa hierarquia: é uma categoria à parte (fora da
+    # segmentação por Pareto — ver classificar_faixas), não um degrau entre
+    # Grupo 3 e Demais. Sem excluir aqui, "Balcão" ganhava uma posição na
+    # ordem_faixa (entre Demais e o último Grupo) — na prática inofensivo,
+    # porque a condição de balcão de um cliente não muda de período pra
+    # período (então nunca aparece um "de"/"para" misturando Balcão com
+    # outra faixa), mas conceitualmente errado e um risco se isso um dia
+    # deixar de ser verdade.
+    faixas_em_ordem = [f for f in abc_df["Faixa_ABC"].unique() if f not in ("Demais", "Balcão")]
     faixas_em_ordem = sorted(faixas_em_ordem, key=lambda nome: int(nome.split()[-1]) if nome.split()[-1].isdigit() else 99)
     faixas_em_ordem.append("Demais")
     ordem_faixa = {nome: (len(faixas_em_ordem) - i) for i, nome in enumerate(faixas_em_ordem)}
@@ -1411,7 +1419,7 @@ def migracao_abc(df, abc_df, granularidade="Mensal"):
         for cliente in clientes_comuns:
             de = faixa_anterior[cliente]
             para = faixa_atual[cliente]
-            if de == para:
+            if de == para or de == "Balcão" or para == "Balcão":
                 continue
 
             direcao = "Subiu" if ordem_faixa.get(para, 0) > ordem_faixa.get(de, 0) else "Desceu"
@@ -1637,7 +1645,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     base). Não afeta top_produtos/top_fabricantes, que somam a base inteira
     e não fatiam por período.
 
-    top_n_produtos: limite de produtos em evolucao_produtos/alertas_queda
+    top_n_produtos: limite de produtos em alertas_queda
     (None = todos — ver tendencia_produtos). reducao_minima_erosao: % mínimo
     de queda para um cliente aparecer em erosao_clientes (ver
     erosao_clientes_por_produto).
@@ -1654,7 +1662,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
 
     todas_as_chaves = {
         "top_produtos", "poder_compra_clientes",
-        "evolucao_produtos", "alertas_queda", "erosao_clientes", "erosao_geral", "sem_venda", "alto_giro", "abc", "abc_produtos",
+        "alertas_queda", "erosao_clientes", "erosao_geral", "sem_venda", "alto_giro", "abc", "abc_produtos",
         "migracao_abc", "migracao_resumo", "migracao_score_clientes",
         "produtos_em_alta", "produtos_em_queda", "clientes_queda_qtd",
         "correlacao_produto_cliente", "impacto_financeiro_churn",
@@ -1669,7 +1677,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     # correlação e impacto de churn dependem da erosão de clientes) para
     # nunca pular um cálculo que outro item pedido ainda precisa, mas também
     # nunca calcular o que ninguém pediu.
-    precisa_tendencia = precisa("evolucao_produtos", "alertas_queda", "erosao_clientes", "correlacao_produto_cliente")
+    precisa_tendencia = precisa("alertas_queda", "erosao_clientes", "correlacao_produto_cliente")
     precisa_erosao = precisa("erosao_clientes", "correlacao_produto_cliente", "impacto_financeiro_churn")
     precisa_migracao = precisa("migracao_abc", "migracao_resumo", "migracao_score_clientes")
     precisa_abc = precisa("abc") or precisa_migracao
@@ -1703,8 +1711,6 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 df_periodo, granularidade, periodos_queda_consecutiva, top_n=top_n_produtos,
                 queda_minima_reais=queda_minima_alerta,
             )
-            if precisa("evolucao_produtos"):
-                analises["evolucao_produtos"] = evolucao
             if precisa("alertas_queda"):
                 analises["alertas_queda"] = alertas
 

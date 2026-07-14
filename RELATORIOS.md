@@ -45,13 +45,8 @@ simples), uma lista de grupos em `GRUPOS_PARAMETROS_RELATORIO`:
 ```
 
 A aresta é N:1 porque o mesmo campo pode alimentar mais de um relatório do
-catálogo — dois casos hoje:
+catálogo — hoje só um caso:
 
-- `evolucao_produtos` ("Tendência de Produtos") e `alertas_queda` ("Alertas de
-  Queda Consecutiva") são as duas saídas de uma única chamada de
-  `tendencia_produtos()` — compartilham os três campos (períodos seguidos,
-  queda mínima em R$, produtos a exibir). Desenhado logo abaixo de
-  `alertas_queda`; habilitado se **qualquer um dos dois** estiver marcado.
 - `erosao_geral` e `erosao_clientes` compartilham o mesmo núcleo
   (`_erosao_generico`) e os mesmos dois pisos (redução mínima %, queda mínima
   R$). Desenhado entre os dois checkboxes (logo após `erosao_geral`), mesma
@@ -73,13 +68,14 @@ desabilitar, leitura em `_gerar_relatorio_padrao`) já existe.
 | Chave | Rótulo | Função | O que é |
 |---|---|---|---|
 | `top_produtos` | Venda por Produto (Top Produtos) | `top_produtos()` | Top 20 por Receita (soma de todo o período carregado, **não** respeita granularidade) |
-| `evolucao_produtos` | Tendência de Produtos | `tendencia_produtos()` | Receita/QTD por produto e período (rótulo legível: `ago/25`, `T3/25`, `S1/25`, `2025`), com variação % vs. período anterior. Ordenado por `Tendencia_Pct` (média dos últimos 3 períodos vs. média dos 3 primeiros — preferido a CAGR ponto-a-ponto ou regressão linear, testado contra `data.teste.csv`) descendente. Campo "Produtos a exibir" na tela limita a top N por tendência (vazio = todos). |
 | `abc` | Faturamento e Segmentação de Clientes (ABC) | `classificar_abc` → `classificar_faixas` | Por período, ordena clientes por receita e divide em faixas por % acumulado (`Grupo 1/2/3/Demais`, cortes padrão 30/50/60%, mais faixa **"Balcão"** própria se o checkbox de balcão estiver marcado — com `Percentual_Individual` real, `Percentual_Acumulado` = NaN, nunca misturada com "Grupo 1"). Mostra só os **5 clientes de maior receita por (período, faixa)** — `top_clientes_por_grupo`, ajustável só via código. Traz `Renuncia*` (queda de receita vs. período anterior); **não** traz mais frequência (removida — não fazia sentido junto de um corte "top 5"). |
-| `migracao_abc` | Migração de Grupo (inclui resumo e score por cliente) | `migracao_abc()` + `resumo_migracao()` + `pontuacao_migracao_clientes()` | Marcar esta chave gera **3 abas**: (1) `Migracao_ABC` — quem subiu/desceu de faixa entre períodos consecutivos, com causa quando uma heurística bate com folga (produto abandonado ≥70% da receita, frequência caiu pela metade+, ticket médio caiu 40%+, ou produto novo ≥50% da receita atual — célula fica **em branco** se nada bater, sem "estimativa" genérica); (2) `Migracao_Resumo` — `Qtd_Subiu`/`Qtd_Desceu` por transição de período, mais `Margem` (`Qtd_Subiu - Qtd_Desceu` — positiva quando mais clientes subiram do que desceram na transição); (3) `Migracao_Score_Clientes` — score acumulado por cliente em todo o histórico (+2 por subida, -3 por queda), `Percentual_Permanencia` (% das transições sem migrar de faixa) — "transições" conta só **pares de períodos consecutivos** em que o cliente aparece nos dois lados (mesma regra de `migracao_abc`), não simplesmente "nº de períodos em que aparece menos 1" (isso superestimaria as oportunidades pra clientes com histórico "com buracos" — ex.: compra em ago/25, some, volta só em dez/25) — e `Grupo` (faixa ABC do cliente no período mais recente em que aparece na base, não a faixa "no auge"). A classificação ABC usada aqui é sempre a **completa** (sem o corte de top-5 do relatório "ABC"), senão a migração só enxergaria 5 clientes por grupo. |
+| `migracao_abc` | Migração de Grupo (inclui resumo e score por cliente) | `migracao_abc()` + `resumo_migracao()` + `pontuacao_migracao_clientes()` | Marcar esta chave gera **3 abas**: (1) `Migracao_ABC` — quem subiu/desceu de faixa entre períodos consecutivos, com causa quando uma heurística bate com folga (produto abandonado ≥70% da receita, frequência caiu pela metade+, ticket médio caiu 40%+, ou produto novo ≥50% da receita atual — célula fica **em branco** se nada bater, sem "estimativa" genérica); (2) `Migracao_Resumo` — `Qtd_Subiu`/`Qtd_Desceu` por transição de período, mais `Margem` (`Qtd_Subiu - Qtd_Desceu` — positiva quando mais clientes subiram do que desceram na transição); (3) `Migracao_Score_Clientes` — score acumulado por cliente em todo o histórico (+2 por subida, -3 por queda), `Meses_No_Grupo_Atual` — sequência de períodos mais recentes e consecutivos (sem buraco no calendário) na MESMA faixa em que o cliente está agora, não uma média/proporção do histórico inteiro (um cliente que passou o ano oscilando entre faixas e só emplacou na atual nos 2 últimos meses mostra "2", não uma média arrastando o passado; campo antigo `Percentual_Permanencia` fazia exatamente essa mistura e foi substituído por pedido do usuário, que validou o cálculo contra dados reais) — "transições" (usado só pra `Qtd_Subiu`/`Qtd_Desceu`/`Score`) conta só **pares de períodos consecutivos** em que o cliente aparece nos dois lados (mesma regra de `migracao_abc`), não simplesmente "nº de períodos em que aparece menos 1" (isso superestimaria as oportunidades pra clientes com histórico "com buracos" — ex.: compra em ago/25, some, volta só em dez/25) — e `Grupo` (faixa ABC do cliente no período mais recente em que aparece na base, não a faixa "no auge"). A classificação ABC usada aqui é sempre a **completa** (sem o corte de top-5 do relatório "ABC"), senão a migração só enxergaria 5 clientes por grupo. |
 
 `top_produtos` é a única do catálogo que **não varia por granularidade** — soma a base inteira, sempre.
 
 > `top_clientes` ("Venda por Cliente / Top Clientes") e `top_fabricantes` ("Venda por Fabricante / Top Fabricantes") foram removidos do catálogo por falta de uso — viraram os gráficos "Top Clientes por Receita" e "Top Fabricantes por Receita" (ver seção Gráficos abaixo).
+>
+> `evolucao_produtos` ("Tendência de Produtos") também foi removido do catálogo pelo mesmo motivo — virou a opção "Produto (maior tendência)" do gráfico "Evolução no Tempo" (ver seção Gráficos abaixo). `tendencia_produtos()` continua existindo e sendo chamada internamente (seu segundo retorno alimenta `alertas_queda`; o próprio gráfico chama o primeiro retorno pra selecionar os produtos por tendência em vez de maior receita).
 
 ### Relatórios Gerenciais
 
@@ -120,7 +116,7 @@ Tabela dinâmica livre (`pandas.pivot_table`, com `margins=True` = linha/coluna 
 
 ## Gráficos (`graficos.py`)
 
-Seis visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` do cliente (última classificação disponível), exceto onde indicado:
+Sete visualizações (a maioria com estilo Dispersão/Barras/Pizza selecionável), sempre coloridas por `Faixa_ABC` do cliente (última classificação disponível), exceto onde indicado:
 
 1. **Vendas por Fabricante** — QTD × Receita, um ponto por (fabricante, cliente).
 2. **Vendas por Produto** — QTD × Receita por (produto, cliente); pode colorir por Faixa ABC **ou** por Fabricante.
@@ -128,8 +124,9 @@ Seis visualizações de dispersão (scatter), sempre coloridas por `Faixa_ABC` d
 4. **Afinidade Cliente × Fabricante** — % do faturamento do cliente que vem daquele fabricante (eixo X) × frequência de compra (eixo Y).
 5. **Top Clientes por Receita** — receita total dos N clientes de maior faturamento (10/20/50/100, ajustável), ordenado decrescente, sem cor por faixa. Substitui o relatório `top_clientes` removido do catálogo.
 6. **Top Fabricantes por Receita** — mesma ideia, por fabricante (N ajustável). Substitui o relatório `top_fabricantes` removido do catálogo. Nos estilos Barras/Dispersão/Pizza (não em Histograma nem Pirâmide, que já são outra comparação), a tabela exportada ganha 4 colunas extras — Receita/QTD do "Mês Atual" e do "Mês Anterior" (os dois últimos `Periodo_Mensal` presentes no recorte já filtrado por período/fabricante/faixa na tela, não necessariamente o mês corrente do calendário) — via `_colunas_mes_atual_anterior` em `graficos.py`, ao lado do total (`Receita`/`QTD`, soma de todo o período filtrado).
+7. **Evolução no Tempo** — série temporal (linha ou barras) por `Periodo_Mensal`. "Agrupar por: Nenhum" soma a base inteira numa série só; Fabricante/Produto/Cliente traçam uma série por categoria, limitada às top N (combo "Quantidade de séries") de maior receita total; "Produto (maior tendência)" usa a mesma seleção do antigo relatório `evolucao_produtos` (`tendencia_produtos()` — média dos últimos 3 períodos vs. dos 3 primeiros) em vez de maior receita.
 
-Exportação: só PNG, um gráfico por vez (a view atualmente selecionada).
+Exportação: só PNG, um gráfico por vez (a view atualmente selecionada); Excel da última tabela plotada, quando aplicável.
 
 ## Exportação — Excel, PDF, Word
 
@@ -147,4 +144,4 @@ Os três formatos recebem o mesmo dicionário de resultados e passam por uma "ca
 | `app.py` | Catálogo (`CATALOGO_RELATORIOS`), nomes/colunas-moeda por relatório, exportação Excel, orquestração da geração via thread |
 | `exportadores_pdf_word.py` | Exportação PDF e Word |
 | `pivot_builder.py` | Relatórios Personalizados (pivot table) |
-| `graficos.py` | As 4 views de dispersão |
+| `graficos.py` | As 7 views de gráficos (aba "Gráficos") |

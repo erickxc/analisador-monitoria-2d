@@ -1473,15 +1473,20 @@ def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
     -3 por queda — queda pesa mais que subida, então clientes que oscilam
     (sobe e cai) tendem a score negativo, não neutro.
 
-    Percentual_Permanencia: das transições de período em que o cliente
-    aparece nos dois lados (a mesma base contada por migracao_abc), qual %
-    ele NÃO migrou de faixa. 100% = nunca mudou de faixa desde que aparece
-    na base.
+    Meses_No_Grupo_Atual: sequência de períodos MAIS RECENTES e CONSECUTIVOS
+    (sem buraco no calendário) em que o cliente ficou na mesma faixa em que
+    está agora — não é média/proporção do histórico inteiro (isso mistura
+    fases completamente diferentes: um cliente que passou o ano oscilando
+    entre Grupo 2/3/Demais e só emplacou no Grupo 1 nos 2 últimos meses deve
+    mostrar "2", não uma média arrastando o passado). Para de contar no
+    primeiro período com faixa diferente OU no primeiro buraco no calendário
+    (cliente ausente numa transição) — o mesmo critério de "transição real"
+    usado em Transicoes/migracao_abc.
 
     Grupo: faixa ABC do cliente no período mais recente em que aparece na
     base (não a faixa "no auge" nem a mais frequente — onde ele está AGORA).
     """
-    colunas = ["Cliente", "Qtd_Subiu", "Qtd_Desceu", "Score", "Percentual_Permanencia", "Grupo"]
+    colunas = ["Cliente", "Qtd_Subiu", "Qtd_Desceu", "Score", "Meses_No_Grupo_Atual", "Grupo"]
     if abc_df.empty:
         return pd.DataFrame(columns=colunas)
 
@@ -1514,19 +1519,29 @@ def pontuacao_migracao_clientes(migracao_df, abc_df, granularidade="Mensal"):
         lambda serie: _pares_consecutivos(serie.unique())
     )
 
+    def _meses_no_grupo_atual(sub_df):
+        pares = sorted((ordem_periodo[p], f) for p, f in zip(sub_df["Periodo"], sub_df["Faixa_ABC"]))
+        if not pares:
+            return 0
+        faixa_atual = pares[-1][1]
+        indice_esperado = pares[-1][0]
+        contagem = 0
+        for indice, faixa in reversed(pares):
+            if faixa != faixa_atual or indice != indice_esperado:
+                break
+            contagem += 1
+            indice_esperado -= 1
+        return contagem
+
+    meses_no_grupo_atual = abc_df.groupby("Cliente")[["Periodo", "Faixa_ABC"]].apply(_meses_no_grupo_atual)
+
     resultado = transicoes_por_cliente.rename("Transicoes").reset_index()
     resultado = resultado.merge(
         contagem_migracoes[["Subiu", "Desceu"]].reset_index(), on="Cliente", how="left"
     )
     resultado[["Subiu", "Desceu"]] = resultado[["Subiu", "Desceu"]].fillna(0).astype(int)
     resultado["Score"] = resultado["Subiu"] * PONTOS_SUBIU_FAIXA + resultado["Desceu"] * PONTOS_DESCEU_FAIXA
-
-    migracoes_totais = resultado["Subiu"] + resultado["Desceu"]
-    resultado["Percentual_Permanencia"] = np.where(
-        resultado["Transicoes"] > 0,
-        (resultado["Transicoes"] - migracoes_totais) / resultado["Transicoes"] * 100,
-        100.0,
-    )
+    resultado["Meses_No_Grupo_Atual"] = resultado["Cliente"].map(meses_no_grupo_atual)
 
     resultado.rename(columns={"Subiu": "Qtd_Subiu", "Desceu": "Qtd_Desceu"}, inplace=True)
 

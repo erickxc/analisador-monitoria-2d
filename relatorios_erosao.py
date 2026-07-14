@@ -119,7 +119,7 @@ def erosao_clientes_geral(df, reducao_minima_percentual=50.0, queda_minima_reais
     return erosao
 
 
-def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False):
+def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False, df_para_grupo=None):
     """
     Relatório executivo, sem granularidade (sempre por Periodo_Mensal):
     clientes que já compraram alguma vez, mas praticamente pararam — a
@@ -143,6 +143,11 @@ def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), des
     Pico, e uma coluna por mês disponível na base (rótulo legível, ex.
     "ago/25") — ordenado por Receita no Pico descendente (maior potencial
     perdido primeiro).
+
+    df_para_grupo: base alternativa usada SÓ para calcular o Grupo (None =
+    usa o próprio `df`). Existe porque `df` pode já vir filtrado por
+    "somente produtos de alto giro" — Grupo deve refletir a receita total
+    do cliente independente desse filtro.
     """
     colunas_vazias = ["Cliente", "Grupo", "Receita no Pico"]
     clientes_erosao = _erosao_generico(df, ["Cliente"], reducao_minima_percentual, queda_minima_reais=0.0)
@@ -160,7 +165,8 @@ def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), des
     pivot = pivot.reindex(columns=periodos_ordenados).fillna(0.0)
     pivot.columns = [_formatar_rotulo_periodo(p, "Mensal") for p in pivot.columns]
 
-    classificacao = classificar_clientes_agregado(df, cortes=cortes, desconsiderar_balcao=desconsiderar_balcao)
+    base_grupo = df_para_grupo if df_para_grupo is not None else df
+    classificacao = classificar_clientes_agregado(base_grupo, cortes=cortes, desconsiderar_balcao=desconsiderar_balcao)
     mapa_grupo = dict(zip(classificacao["Cliente"], classificacao["Faixa"]))
     mapa_pico = clientes_erosao.set_index("Cliente")["Receita_Periodo_Anterior"]
 

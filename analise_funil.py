@@ -86,7 +86,8 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                               periodos_queda_consecutiva=2, callback_log=None, chaves_solicitadas=None,
                               desconsiderar_balcao=False, excluir_periodo_atual=True,
                               top_n_produtos=None, reducao_minima_erosao=50.0, queda_minima_alerta=0.0,
-                              queda_minima_erosao_reais=0.0, reducao_minima_sem_venda=90.0, top_n_poder_compra=None):
+                              queda_minima_erosao_reais=0.0, reducao_minima_sem_venda=90.0, top_n_poder_compra=None,
+                              df_para_grupo=None):
     """
     Roda as análises solicitadas para cada granularidade escolhida.
 
@@ -107,6 +108,15 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     (None = todos — ver tendencia_produtos). reducao_minima_erosao: % mínimo
     de queda para um cliente aparecer em erosao_clientes (ver
     erosao_clientes_por_produto).
+
+    df_para_grupo: base alternativa usada em TODA classificação de Grupo
+    (1/2/3/Demais) — Migração de Grupo/ABC, Poder de Compra, Sem Venda e o
+    filtro "Grupo 1" do Alto Giro (None = usa o próprio `df`). Existe porque
+    `df` pode já vir filtrado por "somente produtos de alto giro" (decisão
+    de `app.py`) — Grupo é sempre uma pergunta sobre a receita TOTAL do
+    cliente, não só a receita dos produtos de alto giro, então o chamador
+    deve passar aqui a mesma base só filtrada por loja/cliente, sem o corte
+    de produtos. Recebe a mesma exclusão de clientes_excluidos que `df`.
 
     callback_log: função opcional callback_log(mensagem) chamada a cada etapa
     concluída, para permitir feedback de progresso na interface.
@@ -150,6 +160,10 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
     if clientes_excluidos:
         df = df[~df["Cliente"].isin(set(clientes_excluidos))]
 
+    df_grupo = df if df_para_grupo is None else df_para_grupo
+    if clientes_excluidos:
+        df_grupo = df_grupo[~df_grupo["Cliente"].isin(set(clientes_excluidos))]
+
     resultados = {}
     for granularidade in granularidades:
         analises = {}
@@ -161,6 +175,13 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             logar(f"[{granularidade}] Período mais recente ({periodos_ordenados[-1]}) excluído por padrão (provavelmente incompleto).")
         else:
             df_periodo = df
+
+        col_periodo_grupo = COLUNA_PERIODO[granularidade]
+        periodos_grupo_ordenados = _ordenar_periodos(df_grupo[col_periodo_grupo].unique(), granularidade)
+        if excluir_periodo_atual and len(periodos_grupo_ordenados) > 1:
+            df_periodo_grupo = df_grupo[df_grupo[col_periodo_grupo] != periodos_grupo_ordenados[-1]]
+        else:
+            df_periodo_grupo = df_grupo
 
         evolucao, alertas = (None, None)
         if precisa_tendencia:
@@ -219,6 +240,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
                 reducao_minima_percentual=reducao_minima_sem_venda,
                 cortes=cortes_clientes,
                 desconsiderar_balcao=desconsiderar_balcao,
+                df_para_grupo=df_grupo,
             )
 
         if precisa("alto_giro"):
@@ -229,15 +251,17 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             # sustentado por clientes menores não deve aparecer "em alta" por
             # causa deles; o que importa aqui é a carteira principal.
             #
-            # A classificação usa SEMPRE o "df" completo (todo o histórico, sem
-            # excluir o período mais recente) — não o "df_periodo" já filtrado
+            # A classificação usa SEMPRE "df_grupo" completo (todo o histórico,
+            # sem excluir o período mais recente, e sem o corte de "somente
+            # alto giro" se estiver ativo) — não o "df_periodo" já filtrado
             # logo abaixo — porque quem é Grupo 1 é uma pergunta sobre a receita
             # TOTAL do cliente, igual à prévia de Configurações; calcular sobre
-            # uma fatia menor (sem o último mês) muda o ranking e pode incluir/
-            # excluir cliente perto do corte por pouco, divergindo do que o
-            # usuário vê e valida na tela de Configurações.
+            # uma fatia menor (sem o último mês, ou só produtos de alto giro)
+            # muda o ranking e pode incluir/excluir cliente perto do corte por
+            # pouco, divergindo do que o usuário vê e valida na tela de
+            # Configurações.
             classificacao_grupo1 = classificar_clientes_agregado(
-                df, cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
+                df_grupo, cortes=cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
             )
             clientes_grupo1 = set(classificacao_grupo1.loc[classificacao_grupo1["Faixa"] == "Grupo 1", "Cliente"])
             mapa_faixa_cliente = dict(zip(classificacao_grupo1["Cliente"], classificacao_grupo1["Faixa"]))
@@ -263,8 +287,14 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             # precisa ver TODOS os clientes pra detectar corretamente quem
             # mudou de faixa. O corte "top 5" é aplicado só na hora de expor
             # a chave "abc" do relatório, não na classificação em si.
+            #
+            # Usa df_periodo_grupo (não df_periodo): Grupo é sempre pela
+            # receita TOTAL do cliente, então precisa da base sem o corte de
+            # "somente alto giro" — mas ainda precisa ser POR PERÍODO (com o
+            # período mais recente excluído do mesmo jeito que df_periodo)
+            # pra migração entre faixas continuar fazendo sentido.
             abc = classificar_abc(
-                df_periodo, granularidade, clientes_excluidos, cortes_clientes,
+                df_periodo_grupo, granularidade, clientes_excluidos, cortes_clientes,
                 desconsiderar_balcao=desconsiderar_balcao, top_clientes_por_grupo=None,
             )
             if precisa("abc"):
@@ -274,7 +304,7 @@ def gerar_analises_completas(df, granularidades, clientes_excluidos=None,
             logar(f"[{granularidade}] Calculando poder de compra agregado dos clientes...")
             analises["poder_compra_clientes"] = poder_compra_agregado(
                 df_periodo, clientes_excluidos, cortes_clientes, desconsiderar_balcao=desconsiderar_balcao,
-                top_n=top_n_poder_compra,
+                top_n=top_n_poder_compra, df_para_grupo=df_grupo,
             ).drop(columns=["Percentual_Acumulado"]).rename(columns={
                 "Receita_Media_Recente": "Receita Média Recente (3 meses)",
                 "Desempenho_Vs_Potencial_Pct": "% de Variação vs. Potencial",

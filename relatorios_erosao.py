@@ -7,7 +7,7 @@ churn que consomem os resultados de erosão.
 import numpy as np
 import pandas as pd
 
-from classificacao import classificar_clientes_agregado
+from classificacao import classificar_clientes_agregado, classificar_faixas
 from nucleo_analise import COLUNA_PERIODO, _formatar_rotulo_periodo, _ordenar_periodos
 
 # ---------------------------------------------------------------------------
@@ -139,17 +139,27 @@ def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), des
     cliente de uma vez, em vez de só os dois extremos.
 
     Retorna: Cliente, Grupo (faixa ABC pela receita total — ver
-    classificar_clientes_agregado — não pelo poder de compra), Receita no
-    Pico, e uma coluna por mês disponível na base (rótulo legível, ex.
-    "ago/25") — ordenado por Receita no Pico descendente (maior potencial
-    perdido primeiro).
+    classificar_clientes_agregado — não pelo poder de compra), Grupo 11
+    Meses (faixa do cliente no primeiro período disponível na base — a base
+    é sempre uma janela corrida dos últimos 11 meses, então este é
+    literalmente "de onde ele partiu"), Grupo no Pico (faixa do cliente no
+    mês do seu próprio pico de receita — não um período fixo, varia por
+    cliente), Receita no Pico, e uma coluna por mês disponível na base
+    (rótulo legível, ex. "ago/25") — ordenado por Receita no Pico
+    descendente (maior potencial perdido primeiro).
 
-    df_para_grupo: base alternativa usada SÓ para calcular o Grupo (None =
-    usa o próprio `df`). Existe porque `df` pode já vir filtrado por
-    "somente produtos de alto giro" — Grupo deve refletir a receita total
-    do cliente independente desse filtro.
+    Grupo/Grupo 11 Meses/Grupo no Pico vêm sempre da MESMA classificação
+    (classificar_clientes_agregado para o atual, classificar_faixas por
+    período para os outros dois) — "-" quando o cliente não tem uma linha
+    classificada no período em questão (ex.: sem receita acumulada positiva
+    ainda naquele mês).
+
+    df_para_grupo: base alternativa usada SÓ para calcular Grupo/Grupo 11
+    Meses/Grupo no Pico (None = usa o próprio `df`). Existe porque `df` pode
+    já vir filtrado por "somente produtos de alto giro" — Grupo deve
+    refletir a receita total do cliente independente desse filtro.
     """
-    colunas_vazias = ["Cliente", "Grupo", "Receita no Pico"]
+    colunas_vazias = ["Cliente", "Grupo", "Grupo 11 Meses", "Grupo no Pico", "Receita no Pico"]
     clientes_erosao = _erosao_generico(df, ["Cliente"], reducao_minima_percentual, queda_minima_reais=0.0)
     if clientes_erosao.empty:
         return pd.DataFrame(columns=colunas_vazias)
@@ -170,9 +180,39 @@ def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), des
     mapa_grupo = dict(zip(classificacao["Cliente"], classificacao["Faixa"]))
     mapa_pico = clientes_erosao.set_index("Cliente")["Receita_Periodo_Anterior"]
 
+    # Grupo 11 Meses/Grupo no Pico: precisam da classificação POR PERÍODO
+    # (classificar_faixas), não da agregada — "Grupo" sozinho só sabe o
+    # presente; aqui é olhar pra trás, período a período.
+    faixas_periodo = classificar_faixas(base_grupo, "Mensal", campo="Cliente", cortes=cortes, desconsiderar_balcao=desconsiderar_balcao)
+
+    mapa_grupo_11_meses = {}
+    if periodos_ordenados:
+        primeiro_periodo = periodos_ordenados[0]
+        mapa_grupo_11_meses = dict(
+            zip(
+                faixas_periodo.loc[faixas_periodo["Periodo"] == primeiro_periodo, "Cliente"],
+                faixas_periodo.loc[faixas_periodo["Periodo"] == primeiro_periodo, "Faixa_ABC"],
+            )
+        )
+
+    # Periodo_Pico (em clientes_erosao) já vem formatado como rótulo (ex.
+    # "ago/25") — reformata o Periodo bruto de faixas_periodo do mesmo jeito
+    # pra poder casar os dois por (Cliente, rótulo do período).
+    rotulo_por_periodo = faixas_periodo["Periodo"].apply(lambda p: _formatar_rotulo_periodo(p, "Mensal"))
+    mapa_faixa_cliente_periodo = dict(zip(zip(faixas_periodo["Cliente"], rotulo_por_periodo), faixas_periodo["Faixa_ABC"]))
+    mapa_periodo_pico = clientes_erosao.set_index("Cliente")["Periodo_Pico"]
+
+    def grupo_no_pico(cliente):
+        periodo_pico = mapa_periodo_pico.get(cliente)
+        if periodo_pico is None:
+            return "-"
+        return mapa_faixa_cliente_periodo.get((cliente, periodo_pico), "-")
+
     resultado = pivot.reset_index()
     resultado.insert(1, "Grupo", resultado["Cliente"].map(mapa_grupo).fillna("-"))
-    resultado.insert(2, "Receita no Pico", resultado["Cliente"].map(mapa_pico))
+    resultado.insert(2, "Grupo 11 Meses", resultado["Cliente"].map(mapa_grupo_11_meses).fillna("-"))
+    resultado.insert(3, "Grupo no Pico", resultado["Cliente"].map(grupo_no_pico))
+    resultado.insert(4, "Receita no Pico", resultado["Cliente"].map(mapa_pico))
     resultado.sort_values("Receita no Pico", ascending=False, inplace=True)
     resultado.reset_index(drop=True, inplace=True)
     return resultado

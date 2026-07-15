@@ -7,7 +7,7 @@ churn que consomem os resultados de erosão.
 import numpy as np
 import pandas as pd
 
-from classificacao import classificar_clientes_agregado
+from classificacao import classificar_clientes_agregado, classificar_faixas
 from nucleo_analise import COLUNA_PERIODO, _formatar_rotulo_periodo, _ordenar_periodos
 
 # ---------------------------------------------------------------------------
@@ -119,7 +119,43 @@ def erosao_clientes_geral(df, reducao_minima_percentual=50.0, queda_minima_reais
     return erosao
 
 
-def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False, df_para_grupo=None):
+def _cortes_com_minimo_por_grupo(percentual_acumulado, cortes_iniciais, minimo_por_grupo, passo=0.5):
+    """
+    Alarga os cortes percentuais cumulativos (nunca reduz abaixo do
+    configurado) até garantir pelo menos minimo_por_grupo entidades em cada
+    faixa, usando um Percentual_Acumulado já calculado (de um período
+    específico) — o inverso de sugerir_cortes_grupos (que reduz até um
+    MÁXIMO por grupo); aqui é o piso mínimo que importa. Nunca ultrapassa
+    99% (sempre sobra alguém pra "Demais"). Motivo de existir: aplicar os
+    MESMOS cortes % configurados pro período atual a um período histórico
+    muito diferente (poucos clientes ativos, receita concentrada de outro
+    jeito) pode deixar uma faixa vazia ou com 1-2 clientes só — sem
+    comparação nenhuma com "10 clientes no Grupo 1 de hoje".
+    """
+    cortes = []
+    limite_inferior = 0.0
+    for corte_original in cortes_iniciais:
+        corte = max(corte_original, limite_inferior)
+        while True:
+            quantidade = int(((percentual_acumulado > limite_inferior) & (percentual_acumulado <= corte)).sum())
+            if quantidade >= minimo_por_grupo or corte >= 99.0:
+                break
+            corte += passo
+        corte = round(min(corte, 99.0), 1)
+        cortes.append(corte)
+        limite_inferior = corte
+    return cortes
+
+
+def _faixa_por_corte(percentual, cortes, nomes_grupos):
+    for corte, nome in zip(cortes, nomes_grupos):
+        if percentual <= corte:
+            return nome
+    return nomes_grupos[-1]
+
+
+def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), desconsiderar_balcao=False,
+              df_para_grupo=None, minimo_clientes_por_grupo=10):
     """
     Relatório executivo, sem granularidade (sempre por Periodo_Mensal):
     clientes que já compraram alguma vez, mas praticamente pararam — a
@@ -139,17 +175,31 @@ def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), des
     cliente de uma vez, em vez de só os dois extremos.
 
     Retorna: Cliente, Grupo (faixa ABC pela receita total — ver
-    classificar_clientes_agregado — não pelo poder de compra), Receita no
-    Pico, e uma coluna por mês disponível na base (rótulo legível, ex.
-    "ago/25") — ordenado por Receita no Pico descendente (maior potencial
-    perdido primeiro).
+    classificar_clientes_agregado — não pelo poder de compra), Grupo 11
+    Meses (faixa do cliente no primeiro período disponível na base — a base
+    é sempre uma janela corrida dos últimos 11 meses, então este é
+    literalmente "de onde ele partiu"), Grupo no Pico (faixa do cliente no
+    mês do seu próprio pico de receita — não um período fixo, varia por
+    cliente), Receita no Pico, e uma coluna por mês disponível na base
+    (rótulo legível, ex. "ago/25") — ordenado por Receita no Pico
+    descendente (maior potencial perdido primeiro).
 
-    df_para_grupo: base alternativa usada SÓ para calcular o Grupo (None =
-    usa o próprio `df`). Existe porque `df` pode já vir filtrado por
-    "somente produtos de alto giro" — Grupo deve refletir a receita total
-    do cliente independente desse filtro.
+    Grupo vem de classificar_clientes_agregado (percentuais fixos
+    configurados, igual a todo o resto do sistema). Grupo 11 Meses/Grupo no
+    Pico vêm de uma classificação POR PERÍODO (classificar_faixas) com os
+    cortes % ALARGADOS especificamente pra aquele período — ver
+    _cortes_com_minimo_por_grupo — pra garantir pelo menos
+    minimo_clientes_por_grupo entidades em cada faixa mesmo quando a
+    receita daquele período histórico não se parece em nada com a atual
+    (poucos clientes ativos, receita concentrada diferente). "-" quando o
+    cliente não tem uma linha classificada no período em questão.
+
+    df_para_grupo: base alternativa usada SÓ para calcular Grupo/Grupo 11
+    Meses/Grupo no Pico (None = usa o próprio `df`). Existe porque `df` pode
+    já vir filtrado por "somente produtos de alto giro" — Grupo deve
+    refletir a receita total do cliente independente desse filtro.
     """
-    colunas_vazias = ["Cliente", "Grupo", "Receita no Pico"]
+    colunas_vazias = ["Cliente", "Grupo", "Grupo 11 Meses", "Grupo no Pico", "Receita no Pico"]
     clientes_erosao = _erosao_generico(df, ["Cliente"], reducao_minima_percentual, queda_minima_reais=0.0)
     if clientes_erosao.empty:
         return pd.DataFrame(columns=colunas_vazias)
@@ -170,9 +220,63 @@ def sem_venda(df, reducao_minima_percentual=90.0, cortes=(30.0, 50.0, 60.0), des
     mapa_grupo = dict(zip(classificacao["Cliente"], classificacao["Faixa"]))
     mapa_pico = clientes_erosao.set_index("Cliente")["Receita_Periodo_Anterior"]
 
+    # Grupo 11 Meses/Grupo no Pico: precisam da classificação POR PERÍODO
+    # (classificar_faixas), não da agregada — "Grupo" sozinho só sabe o
+    # presente; aqui é olhar pra trás, período a período.
+    nomes_grupos = [f"Grupo {i + 1}" for i in range(len(cortes))] + ["Demais"]
+    faixas_periodo = classificar_faixas(base_grupo, "Mensal", campo="Cliente", cortes=cortes, desconsiderar_balcao=desconsiderar_balcao)
+
+    def faixas_do_periodo_com_minimo(periodo_raw):
+        """Reclassifica todo mundo daquele período com cortes alargados pra
+        garantir minimo_clientes_por_grupo — retorna {Cliente: Faixa_ABC}."""
+        linhas = faixas_periodo[faixas_periodo["Periodo"] == periodo_raw]
+        if linhas.empty:
+            return {}
+        cortes_ajustados = _cortes_com_minimo_por_grupo(
+            linhas["Percentual_Acumulado"], cortes, minimo_clientes_por_grupo,
+        )
+        faixas_ajustadas = linhas["Percentual_Acumulado"].apply(
+            lambda p: _faixa_por_corte(p, cortes_ajustados, nomes_grupos)
+        )
+        return dict(zip(linhas["Cliente"], faixas_ajustadas))
+
+    # "Primeiro período" tem que vir da MESMA base usada pro Grupo atual
+    # (base_grupo — a base carregada na análise, sem o corte de alto giro),
+    # não de `periodos_ordenados` (que é sobre `df`, podendo já estar
+    # filtrado por alto giro): só a base carregada sabe de verdade qual foi
+    # o primeiro mês da janela de 11 meses — um filtro de produto pode
+    # começar depois do início real dos dados, dando um "primeiro período"
+    # que não é o primeiro de verdade.
+    periodos_ordenados_grupo = _ordenar_periodos(base_grupo["Periodo_Mensal"].unique(), "Mensal")
+    mapa_grupo_11_meses = (
+        faixas_do_periodo_com_minimo(periodos_ordenados_grupo[0]) if periodos_ordenados_grupo else {}
+    )
+
+    # Periodo_Pico (em clientes_erosao) já vem formatado como rótulo (ex.
+    # "ago/25"); precisa do período BRUTO correspondente pra reclassificar
+    # com cortes alargados naquele período específico — os rótulos são
+    # únicos dentro da janela de ~11 meses (sem repetir mês/ano), então dá
+    # pra inverter o mapa rótulo->bruto com segurança.
+    rotulo_para_periodo_raw = {
+        _formatar_rotulo_periodo(p, "Mensal"): p for p in periodos_ordenados_grupo
+    }
+    mapa_periodo_pico = clientes_erosao.set_index("Cliente")["Periodo_Pico"]
+    cache_faixas_por_periodo = {}
+
+    def grupo_no_pico(cliente):
+        periodo_pico_rotulo = mapa_periodo_pico.get(cliente)
+        periodo_pico_raw = rotulo_para_periodo_raw.get(periodo_pico_rotulo) if periodo_pico_rotulo else None
+        if periodo_pico_raw is None:
+            return "-"
+        if periodo_pico_raw not in cache_faixas_por_periodo:
+            cache_faixas_por_periodo[periodo_pico_raw] = faixas_do_periodo_com_minimo(periodo_pico_raw)
+        return cache_faixas_por_periodo[periodo_pico_raw].get(cliente, "-")
+
     resultado = pivot.reset_index()
     resultado.insert(1, "Grupo", resultado["Cliente"].map(mapa_grupo).fillna("-"))
-    resultado.insert(2, "Receita no Pico", resultado["Cliente"].map(mapa_pico))
+    resultado.insert(2, "Grupo 11 Meses", resultado["Cliente"].map(mapa_grupo_11_meses).fillna("-"))
+    resultado.insert(3, "Grupo no Pico", resultado["Cliente"].map(grupo_no_pico))
+    resultado.insert(4, "Receita no Pico", resultado["Cliente"].map(mapa_pico))
     resultado.sort_values("Receita no Pico", ascending=False, inplace=True)
     resultado.reset_index(drop=True, inplace=True)
     return resultado

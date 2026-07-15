@@ -222,9 +222,10 @@ def _colunas_moeda_efetivas(chave_analise, df_analise):
     Lista de colunas monetárias pra formatar, resolvendo o caso especial de
     "sem_venda": as colunas são uma por mês disponível na base (nomes
     dinâmicos, ex. "ago/25"), impossível listar de antemão em
-    COLUNAS_MOEDA_POR_ANALISE — aqui todas as colunas exceto Cliente/Grupo
-    são receita, então tudo que sobra é moeda.
+    COLUNAS_MOEDA_POR_ANALISE — aqui todas as colunas exceto Cliente/Grupo/
+    Grupo 11 Meses/Grupo no Pico são receita, então tudo que sobra é moeda.
     """
     if chave_analise == "sem_venda":
-        return [c for c in df_analise.columns if c not in ("Cliente", "Grupo")]
+        colunas_texto = ("Cliente", "Grupo", "Grupo 11 Meses", "Grupo no Pico")
+        return [c for c in df_analise.columns if c not in colunas_texto]
     return COLUNAS_MOEDA_POR_ANALISE.get(chave_analise)

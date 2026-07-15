@@ -124,4 +124,7 @@ NOVIDADES_POR_VERSAO = {
     "1.6.23": [
         "Corrige a classificação de Grupo (1/2/3/Demais): Migração de Grupo, ABC, Poder de Compra, Sem Venda, filtro 'Grupo 1' do Alto Giro e a prévia de Configurações agora usam sempre a receita TOTAL do cliente para decidir o grupo — antes, com 'somente produtos de alto giro' marcado, cada tela podia calcular um grupo diferente para o mesmo cliente, sem explicação visível.",
     ],
+    "1.6.24": [
+        "Sem Venda: novas colunas 'Grupo 11 Meses' (faixa do cliente no início da base) e 'Grupo no Pico' (faixa no mês do seu maior faturamento), para ver em que grupo o cliente já esteve antes de parar de comprar.",
+    ],
 }
